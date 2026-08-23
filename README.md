@@ -99,7 +99,8 @@ The short version:
 1. `vercel deploy`, set `AUTH_SECRET`, `ENCRYPTION_KEY`, `APP_URL`, `CRON_SECRET`
 2. Point `TURSO_DATABASE_URL` at a hosted database
 3. Add `ANTHROPIC_API_KEY`
-4. Connect Google, Microsoft, Meta and LinkedIn from **Settings**
+4. Connect Google, Microsoft, Meta and LinkedIn from **Settings**, then map each
+   GA4 property and ad account to a client in the same place
 5. Open it on your phone and Add to Home Screen
 
 Running cost is roughly: Vercel Hobby free, Turso free tier, Anthropic usage —

@@ -54,8 +54,9 @@ export const connections = sqliteTable(
     refreshToken: text("refresh_token"),
     expiresAt: integer("expires_at", { mode: "timestamp" }),
     scopes: text("scopes"),
-    // provider specific config: { propertyId, adAccountId, customerId, ... }
-    config: text("config", { mode: "json" }).$type<Record<string, unknown>>(),
+    // Which data accounts on this connection belong to which client.
+    // One Google login can serve several GA4 properties and Ads accounts.
+    config: text("config", { mode: "json" }).$type<ConnectionConfig>(),
     status: text("status").notNull().default("connected"), // connected | needs_reauth | error
     lastSyncedAt: integer("last_synced_at", { mode: "timestamp" }),
     lastError: text("last_error"),
@@ -66,6 +67,22 @@ export const connections = sqliteTable(
 );
 
 /* -------------------------------------------------------------- work graph */
+
+/**
+ * A connection is one login; a login can reach several accounts, each belonging
+ * to a different client. `accounts` is that mapping, and it is what tells the
+ * sync which client's numbers it is writing.
+ */
+export type DataAccount = {
+  /** GA4 property id, Google Ads customer id, Meta ad account id, LinkedIn account id */
+  accountId: string;
+  clientId: string;
+  label?: string;
+  /** ga4 | google_ads | meta | linkedin — a Google connection carries both kinds */
+  kind: "ga4" | "google_ads" | "meta" | "linkedin";
+};
+
+export type ConnectionConfig = { accounts?: DataAccount[] };
 
 export const clients = sqliteTable("clients", {
   id: id(),

@@ -200,10 +200,15 @@ const GA4_METRIC_NAMES: Record<string, string> = {
 };
 
 export async function syncGa4(connection: Connection, opts: { days?: number } = {}): Promise<number> {
-  const propertyId = (connection.config?.propertyId as string) ?? connection.externalId;
-  const clientId = (connection.config?.clientId as string) ?? null;
-  const days = opts.days ?? 90;
+  const accounts = (connection.config?.accounts ?? []).filter((a) => a.kind === "ga4");
+  if (accounts.length === 0) return 0;
 
+  let total = 0;
+  for (const account of accounts) total += await syncGa4Property(connection, account.accountId, account.clientId, opts.days ?? 90);
+  return total;
+}
+
+async function syncGa4Property(connection: Connection, propertyId: string, clientId: string, days: number): Promise<number> {
   const body = {
     dateRanges: [{ startDate: `${days}daysAgo`, endDate: "yesterday" }],
     dimensions: [{ name: "date" }, { name: "sessionDefaultChannelGroup" }],
@@ -265,17 +270,27 @@ const GAQL = `
 `;
 
 export async function syncGoogleAds(connection: Connection): Promise<number> {
+  const accounts = (connection.config?.accounts ?? []).filter((a) => a.kind === "google_ads");
+  if (accounts.length === 0) return 0;
   if (!env.google.adsDeveloperToken) throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN is not set.");
 
-  const customerId = String((connection.config?.customerId as string) ?? connection.externalId).replace(/-/g, "");
-  const clientId = (connection.config?.clientId as string) ?? null;
+  let total = 0;
+  for (const account of accounts) total += await syncAdsCustomer(connection, account.accountId, account.clientId);
+  return total;
+}
+
+async function syncAdsCustomer(connection: Connection, rawCustomerId: string, clientId: string): Promise<number> {
+  const developerToken = env.google.adsDeveloperToken;
+  if (!developerToken) throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN is not set.");
+
+  const customerId = rawCustomerId.replace(/-/g, "");
   const token = await accessTokenFor(connection);
 
   const res = await fetch(`https://googleads.googleapis.com/v18/customers/${customerId}/googleAds:searchStream`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${token}`,
-      "developer-token": env.google.adsDeveloperToken,
+      "developer-token": developerToken,
       ...(env.google.adsLoginCustomerId ? { "login-customer-id": env.google.adsLoginCustomerId.replace(/-/g, "") } : {}),
       "content-type": "application/json",
     },

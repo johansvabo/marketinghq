@@ -5,6 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   clients,
+  connections,
   insights,
   milestones,
   projects,
@@ -13,6 +14,7 @@ import {
   signals,
   stakeholders,
   tasks,
+  type DataAccount,
 } from "@/lib/db/schema";
 import { addDays } from "@/lib/dates";
 import { runProactiveEngine } from "@/lib/proactive/engine";
@@ -480,4 +482,26 @@ export async function syncNow(provider?: string) {
   await runEngineNow();
   refresh("/settings", "/insights");
   return { ok: true as const, outcomes };
+}
+
+/**
+ * Maps a data account on a connection (a GA4 property, an Ads customer, a Meta
+ * or LinkedIn ad account) to one of your clients. Without this mapping the sync
+ * has no way to know whose numbers it is writing, so it writes nothing.
+ */
+export async function setConnectionAccounts(connectionId: string, accounts: DataAccount[]) {
+  const [connection] = await db.select().from(connections).where(eq(connections.id, connectionId)).limit(1);
+  if (!connection) return { ok: false as const, error: "Connection not found." };
+
+  const cleaned = accounts
+    .map((a) => ({ ...a, accountId: a.accountId.trim(), label: a.label?.trim() || undefined }))
+    .filter((a) => a.accountId && a.clientId);
+
+  await db
+    .update(connections)
+    .set({ config: { ...(connection.config ?? {}), accounts: cleaned } })
+    .where(eq(connections.id, connectionId));
+
+  refresh("/settings", "/insights");
+  return { ok: true as const };
 }

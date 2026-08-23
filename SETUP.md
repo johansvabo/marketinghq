@@ -114,14 +114,15 @@ One OAuth client covers all four.
 
 **GA4 and Google Ads need one more step.** They ride on the same connection but
 need to know *which* property and account belong to *which* client. After
-connecting, set the `config` JSON on the Google connection row:
+connecting, the Google card in Settings gains an **Accounts → clients** section:
+add a row per GA4 property and per Ads account, paste the ID, pick the client,
+save. One Google login can serve as many clients as you manage.
 
-```json
-{ "propertyId": "123456789", "clientId": "<the client's id from the app>" }
-```
+Until at least one account is mapped, those syncs write nothing — there is no
+honest way to attribute the numbers.
 
-Your GA4 property ID is in GA4 → Admin → Property Settings. If you manage
-several clients' properties, create one connection row per property.
+Your GA4 property ID is in GA4 → Admin → Property Settings. Your Google Ads
+customer ID is at the top right of the Ads UI.
 
 For Google Ads you also need a **developer token** from your MCC account
 (Tools → API Center), set as `GOOGLE_ADS_DEVELOPER_TOKEN`, plus
@@ -147,7 +148,7 @@ account. A basic-access token is enough for reporting.
 4. Permissions needed: `ads_read`, `business_management`. For your own ad
    accounts, development mode is enough — no App Review.
 5. Set `META_APP_ID` and `META_APP_SECRET`
-6. After connecting, set `adAccountId` and `clientId` in the connection's config
+6. After connecting, map each ad account (`act_…`) to a client in the Meta card
 
 ### LinkedIn Ads
 
@@ -158,7 +159,7 @@ account. A basic-access token is enough for reporting.
 3. Redirect URI: `https://your-app/api/connect/linkedin/callback`
 4. Scopes: `r_ads`, `r_ads_reporting`
 5. Set `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET`
-6. After connecting, set `adAccountId` and `clientId` in the connection's config
+6. After connecting, map each ad account to a client in the LinkedIn card
 
 ---
 

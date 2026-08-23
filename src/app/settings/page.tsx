@@ -81,6 +81,7 @@ export default async function SettingsPage() {
               label={PROVIDERS[id].label}
               blurb={PROVIDERS[id].blurb}
               configured={PROVIDERS[id].configured()}
+              clients={clientRows.map((c) => ({ id: c.id, name: c.name }))}
               connection={
                 byProvider.get(id)
                   ? {
@@ -89,6 +90,7 @@ export default async function SettingsPage() {
                       status: byProvider.get(id)!.status,
                       lastSyncedAt: byProvider.get(id)!.lastSyncedAt?.toISOString() ?? null,
                       lastError: byProvider.get(id)!.lastError,
+                      accounts: byProvider.get(id)!.config?.accounts ?? [],
                     }
                   : null
               }
@@ -96,9 +98,9 @@ export default async function SettingsPage() {
           ))}
         </div>
         <p className="mt-3 text-[12px] leading-relaxed text-muted">
-          GA4 and Google Ads ride on the Google connection — after connecting, add the property and customer IDs to that
-          connection so Marketing HQ knows which account belongs to which client. See <code className="rounded bg-[var(--raised)] px-1">SETUP.md</code> for
-          how to get each set of credentials.
+          GA4 and Google Ads ride on the Google connection. Map each property and ad account to a client above — until you
+          do, there is nothing for the sync to attribute and it writes nothing. See{" "}
+          <code className="rounded bg-[var(--raised)] px-1">SETUP.md</code> for where to find each ID.
         </p>
       </section>
 

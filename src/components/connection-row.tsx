@@ -4,7 +4,9 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Link2, RefreshCw } from "lucide-react";
 import { clsx } from "clsx";
+import type { DataAccount } from "@/lib/db/schema";
 import { syncNow } from "@/server/actions";
+import { AccountMapper } from "./account-mapper";
 import { Chip } from "./ui";
 
 type ConnectionInfo = {
@@ -13,6 +15,7 @@ type ConnectionInfo = {
   status: string;
   lastSyncedAt: string | null;
   lastError: string | null;
+  accounts: DataAccount[];
 };
 
 export function ConnectionRow({
@@ -21,12 +24,14 @@ export function ConnectionRow({
   blurb,
   configured,
   connection,
+  clients,
 }: {
   provider: string;
   label: string;
   blurb: string;
   configured: boolean;
   connection: ConnectionInfo | null;
+  clients: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -95,6 +100,15 @@ export function ConnectionRow({
           </button>
         )}
       </div>
+
+      {connection && (
+        <AccountMapper
+          connectionId={connection.id}
+          provider={provider}
+          accounts={connection.accounts}
+          clients={clients}
+        />
+      )}
     </div>
   );
 }

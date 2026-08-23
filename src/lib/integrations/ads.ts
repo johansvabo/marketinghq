@@ -33,12 +33,19 @@ function sumActions(actions: MetaInsight["actions"]): number {
 }
 
 export async function syncMetaAds(connection: Connection, opts: { days?: number } = {}): Promise<number> {
-  const token = await accessTokenFor(connection);
-  const adAccountId = String((connection.config?.adAccountId as string) ?? connection.externalId);
-  const account = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
-  const clientId = (connection.config?.clientId as string) ?? null;
+  const accounts = (connection.config?.accounts ?? []).filter((a) => a.kind === "meta");
+  if (accounts.length === 0) return 0;
 
-  const since = iso(subDays(new Date(), opts.days ?? 30));
+  let total = 0;
+  for (const entry of accounts) total += await syncMetaAccount(connection, entry.accountId, entry.clientId, opts.days ?? 30);
+  return total;
+}
+
+async function syncMetaAccount(connection: Connection, adAccountId: string, clientId: string, days: number): Promise<number> {
+  const token = await accessTokenFor(connection);
+  const account = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
+
+  const since = iso(subDays(new Date(), days));
   const until = iso(subDays(new Date(), 1));
 
   const params = new URLSearchParams({
@@ -111,11 +118,19 @@ type LinkedInElement = {
 };
 
 export async function syncLinkedInAds(connection: Connection, opts: { days?: number } = {}): Promise<number> {
-  const token = await accessTokenFor(connection);
-  const accountId = String((connection.config?.adAccountId as string) ?? connection.externalId).replace(/\D/g, "");
-  const clientId = (connection.config?.clientId as string) ?? null;
+  const accounts = (connection.config?.accounts ?? []).filter((a) => a.kind === "linkedin");
+  if (accounts.length === 0) return 0;
 
-  const start = subDays(new Date(), opts.days ?? 30);
+  let total = 0;
+  for (const entry of accounts) total += await syncLinkedInAccount(connection, entry.accountId, entry.clientId, opts.days ?? 30);
+  return total;
+}
+
+async function syncLinkedInAccount(connection: Connection, rawAccountId: string, clientId: string, days: number): Promise<number> {
+  const token = await accessTokenFor(connection);
+  const accountId = rawAccountId.replace(/\D/g, "");
+
+  const start = subDays(new Date(), days);
   const end = subDays(new Date(), 1);
 
   const params = new URLSearchParams({
