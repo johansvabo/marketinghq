@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { and, desc, eq, like, or, sql } from "drizzle-orm";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { db } from "@/lib/db";
 import { chatMessages, chatThreads, clients, insights } from "@/lib/db/schema";
 import { isConfigured } from "@/lib/env";
@@ -83,6 +83,10 @@ function Tabs({ tab }: { tab: string }) {
         <Plus size={14} />
         Capture
       </Link>
+      <Link href="/brain/import" className="btn btn-sm">
+        <Upload size={14} />
+        Import
+      </Link>
     </div>
   );
 }
@@ -155,10 +159,16 @@ async function Library({ params }: { params: { q?: string; client?: string; kind
             title={params.q ? `Nothing matches "${params.q}"` : "The library is empty"}
             hint="Every result you notice, every client preference, every thing that worked — put it here once and it stays available to you and to the brain forever."
             action={
-              <Link href="/brain/new" className="btn btn-primary btn-sm">
-                <Plus size={14} />
-                Capture something
-              </Link>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Link href="/brain/import" className="btn btn-primary btn-sm">
+                  <Upload size={14} />
+                  Import what you already have
+                </Link>
+                <Link href="/brain/new" className="btn btn-sm">
+                  <Plus size={14} />
+                  Capture one by hand
+                </Link>
+              </div>
             }
           />
         </Card>

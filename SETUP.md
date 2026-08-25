@@ -84,6 +84,13 @@ In **Settings → Clients**, for each client set:
   heard from you in 19 days". Tick **gets the reports** for anyone on the
   distribution list.
 
+Once the clients exist, **Brain → Import** is the fastest way to make the thing
+useful. Point it at whatever you already have — a Notion export (unzip it and
+select the markdown files), old client notes, a quarterly review deck exported to
+PDF — and it proposes entries for you to review. Do this per client rather than
+all at once; the review step is where the quality comes from, and it is easier to
+judge when everything on screen is about one account.
+
 Then set a report cadence per client in **Reports → New cadence**. The
 *template* field is worth filling in properly — it is passed to the drafter, so
 "lead with cost per opportunity, not cost per lead; Anna forwards this to the

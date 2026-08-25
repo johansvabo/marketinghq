@@ -42,6 +42,13 @@ and progress derived from the tasks rather than typed in. Tasks work across
 projects and clients, bucketed by when they actually need attention. Quick
 capture parses `!1` priority, `@client`, `#project` and `^fri` inline.
 
+**Import** — the on-ramp. Paste a pile of old notes, or hand it markdown, Word
+documents and PDFs, and Claude reads them, pulls out what will still matter in a
+year, and proposes tagged entries with the client already matched and a quoted
+snippet from the source so you can check it. You review, edit and drop before
+anything is saved. It deliberately refuses to extract action items, status
+updates and generic advice — a brain full of noise is worse than an empty one.
+
 **The brain** — a chat that answers from *your* record, not the open web. It has
 tools to search everything you've captured, read your tasks and projects, pull
 the marketing numbers, check your calendar, and load a full client brief. It can
@@ -73,6 +80,7 @@ npm install
 npm run db:push        # create the database
 npm run seed           # optional: realistic demo data to look at
 npm run dev            # http://localhost:3000
+npm run test:import    # checks the file readers and chunking
 ```
 
 That's it — no accounts, no keys, no cloud. The demo data gives you three
@@ -124,6 +132,8 @@ src/
     reporting/             cadence maths, data gathering, draft generation
     integrations/          GA4, Google Ads, Gmail, Calendar, Graph, Meta, LinkedIn
     ai/                    Anthropic client, the brain's tools, the agentic loop
+    ai/import.ts           bulk import: extraction schema, prompt, chunking
+    import/files.ts        reading .md / .txt / .docx, passing PDFs through
     brief.ts               the Today picture and the written headline
     metrics.ts             aggregation, comparison, formatting
   server/actions.ts        every write the UI can make

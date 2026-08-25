@@ -48,6 +48,11 @@ export default async function CapturePage({
       <PageHeader
         title="Capture"
         subtitle="Write it down once, badly, now — rather than perfectly, later, never."
+        actions={
+          <Link href="/brain/import" className="btn btn-sm">
+            Import a document instead
+          </Link>
+        }
       />
 
       <Card className="max-w-[720px]">

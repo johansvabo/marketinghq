@@ -90,6 +90,11 @@ body {
   background: color-mix(in oklch, var(--color-brand) 35%, transparent);
 }
 
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--color-brand);
+}
+
 /* ------------------------------------------------------------- primitives */
 
 @utility card {

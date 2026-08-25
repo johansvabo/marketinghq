@@ -21,6 +21,7 @@ import { runProactiveEngine } from "@/lib/proactive/engine";
 import { materializeReportRuns, nextDueDate, reportingPeriod, type Cadence } from "@/lib/reporting/schedule";
 import { draftReport } from "@/lib/reporting/draft";
 import { describeAiError } from "@/lib/ai/client";
+import { INSIGHT_KINDS } from "@/lib/ai/import";
 import { syncAll } from "@/lib/integrations/sync";
 
 function refresh(...paths: string[]) {
@@ -504,4 +505,43 @@ export async function setConnectionAccounts(connectionId: string, accounts: Data
 
   refresh("/settings", "/insights");
   return { ok: true as const };
+}
+
+/**
+ * Writes reviewed import candidates into the brain in one go. Everything here
+ * has already been through a human's eyes in the review step — this deliberately
+ * does no judging of its own beyond clamping the obvious.
+ */
+export async function commitImportedInsights(
+  entries: {
+    title: string;
+    body: string;
+    kind: string;
+    clientId?: string | null;
+    tags?: string[];
+    confidence?: number;
+    occurredAt?: string | null;
+  }[],
+) {
+  const rows = entries
+    .filter((entry) => entry.title.trim() && entry.body.trim())
+    .map((entry) => ({
+      title: entry.title.trim(),
+      body: entry.body.trim(),
+      kind: INSIGHT_KINDS.includes(entry.kind as never) ? entry.kind : "insight",
+      clientId: entry.clientId || null,
+      tags: entry.tags ?? [],
+      confidence: Math.min(Math.max(entry.confidence ?? 3, 1), 5),
+      occurredAt: entry.occurredAt ? new Date(`${entry.occurredAt}T12:00:00`) : new Date(),
+      source: "import" as const,
+    }));
+
+  if (rows.length === 0) return { ok: false as const, error: "Nothing selected to import." };
+
+  for (let i = 0; i < rows.length; i += 100) {
+    await db.insert(insights).values(rows.slice(i, i + 100));
+  }
+
+  refresh("/brain", "/insights");
+  return { ok: true as const, count: rows.length };
 }

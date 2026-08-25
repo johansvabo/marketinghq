@@ -10,7 +10,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "seed": "tsx scripts/seed.ts",
-    "setup": "npm run db:push && npm run seed"
+    "setup": "npm run db:push && npm run seed",
+    "test:import": "tsx scripts/test-import.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -19,6 +20,7 @@
     "date-fns": "^4.4.0",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.33.0",
+    "mammoth": "^1.12.1",
     "next": "^16.3.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
