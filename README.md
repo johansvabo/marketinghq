@@ -76,12 +76,16 @@ on iOS and it behaves like a native app, with a thumb-reachable tab bar.
 ## Quick start
 
 ```bash
-npm install
-npm run db:push        # create the database
-npm run seed           # optional: realistic demo data to look at
+npm install            # fetch the libraries — a few minutes the first time
+npm run setup          # create the database and fill it with demo data
 npm run dev            # http://localhost:3000
-npm run test:import    # checks the file readers and chunking
 ```
+
+`npm run setup` is `db:push` (create the database) plus `seed` (demo data) —
+run them separately if you want the database empty. `npm run test:import`
+checks the file readers and chunker.
+
+**Never used a terminal before?** START-HERE.md walks through it from scratch.
 
 That's it — no accounts, no keys, no cloud. The demo data gives you three
 clients, five projects, 90 days of marketing metrics, captured insights, a
