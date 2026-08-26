@@ -52,7 +52,7 @@ async function main() {
       {
         name: "Nordic Supply",
         slug: "nordic-supply",
-        color: "#6366f1",
+        color: "#2a78d6",
         engagement: "retainer",
         monthlyValue: 48_000,
         emailDomains: ["nordicsupply.com"],
@@ -61,7 +61,7 @@ async function main() {
       {
         name: "Veloce",
         slug: "veloce",
-        color: "#ec4899",
+        color: "#eb6834",
         engagement: "retainer",
         monthlyValue: 35_000,
         emailDomains: ["veloce.dk"],
@@ -70,13 +70,13 @@ async function main() {
       {
         name: "Hallberg Legal",
         slug: "hallberg-legal",
-        color: "#14b8a6",
+        color: "#1baf7a",
         engagement: "advisory",
         monthlyValue: 22_000,
         emailDomains: ["hallberglegal.dk"],
         notes: "Fractional CMO days, two per month. Building the function from nothing — mostly org and positioning work, not campaigns.",
       },
-      { name: "Own practice", slug: "own-practice", color: "#f59e0b", engagement: "internal", notes: "Business development and the things that never get urgent." },
+      { name: "Own practice", slug: "own-practice", color: "#eda100", engagement: "internal", notes: "Business development and the things that never get urgent." },
     ])
     .returning();
 

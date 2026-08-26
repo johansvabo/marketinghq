@@ -5,7 +5,8 @@ import { db } from "@/lib/db";
 import { clients, projects } from "@/lib/db/schema";
 import { getDayPicture, getOrCreateBrief } from "@/lib/brief";
 import { format, relativeDay, timeRange } from "@/lib/dates";
-import { Card, CardTitle, Chip, ClientDot, Empty, PageHeader, Stat } from "@/components/ui";
+import { AlertTriangle, CalendarDays, ListTodo, Sparkles } from "lucide-react";
+import { Card, CardTitle, Chip, ClientBadge, ClientDot, Empty, StatStrip, toneStyle, Zone } from "@/components/ui";
 import { SignalCard } from "@/components/signals";
 import { TaskList } from "@/components/tasks";
 import { QuickAdd, QuickAddHint } from "@/components/quick-add";
@@ -22,49 +23,65 @@ export default async function TodayPage() {
   ]);
 
   const clientNames = new Map(clientOptions.map((c) => [c.id, c.name]));
+  const clientColors = new Map(clientOptions.map((c) => [c.id, c.color]));
   const urgent = picture.signals.filter((s) => s.severity === "urgent");
   const rest = picture.signals.filter((s) => s.severity !== "urgent");
   const bookedHours = (picture.stats.meetingMinutes / 60).toFixed(1).replace(/\.0$/, "");
 
   return (
     <>
-      <PageHeader
-        title={format(new Date(), "EEEE d MMMM")}
-        subtitle={brief.headline}
-        actions={<RunEngineButton />}
-      />
+      {/* The one place on the page that leads. Everything else is subordinate. */}
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 max-w-[62ch]">
+          <p className="section-title">{format(new Date(), "EEEE")}</p>
+          <h1 className="mt-0.5 text-[26px] font-bold tracking-[-0.025em] md:text-[32px]">
+            {format(new Date(), "d MMMM")}
+          </h1>
+          <p className="mt-2 text-[14px] leading-relaxed text-soft md:text-[15px]">{brief.headline}</p>
+        </div>
+        <RunEngineButton />
+      </header>
 
-      <div className="mb-5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
-        <Stat
-          label="Needs attention"
-          value={picture.signals.length}
-          tone={urgent.length > 0 ? "urgent" : "neutral"}
-          hint={urgent.length > 0 ? `${urgent.length} urgent` : "nothing on fire"}
+      <div className="mb-5">
+        <StatStrip
+          items={[
+            {
+              label: "Needs attention",
+              value: picture.signals.length,
+              tone: urgent.length > 0 ? "urgent" : "neutral",
+              hint: urgent.length > 0 ? `${urgent.length} urgent` : "nothing on fire",
+            },
+            {
+              label: "Overdue",
+              value: picture.overdue.length,
+              tone: picture.overdue.length > 0 ? "urgent" : "good",
+              hint: picture.overdue.length === 0 ? "all clear" : "clear or kill first",
+            },
+            {
+              label: "Booked today",
+              value: `${bookedHours}h`,
+              hint: `${picture.events.length} meeting${picture.events.length === 1 ? "" : "s"}`,
+            },
+            {
+              label: "Done this week",
+              value: picture.stats.doneThisWeek,
+              tone: picture.stats.doneThisWeek > 0 ? "good" : "neutral",
+              hint: `${picture.stats.doneToday} today`,
+            },
+          ]}
         />
-        <Stat
-          label="Overdue"
-          value={picture.overdue.length}
-          tone={picture.overdue.length > 0 ? "urgent" : "good"}
-          hint={picture.overdue.length === 0 ? "all clear" : "clear or kill these first"}
-        />
-        <Stat label="Booked today" value={`${bookedHours}h`} hint={`${picture.events.length} meeting${picture.events.length === 1 ? "" : "s"}`} />
-        <Stat label="Done this week" value={picture.stats.doneThisWeek} tone="good" hint={`${picture.stats.doneToday} today`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
         {/* ------------------------------------------------------ left column */}
         <div className="flex flex-col gap-4">
-          <section>
-            <CardTitle
-              action={
-                picture.signals.length > 0 ? (
-                  <span className="text-[11.5px] text-muted">ranked by what costs you most if ignored</span>
-                ) : undefined
-              }
-            >
-              Move the needle
-            </CardTitle>
-
+          <Zone
+            title="Move the needle"
+            icon={<Sparkles size={14} strokeWidth={2.2} />}
+            tone={urgent.length > 0 ? "urgent" : "brand"}
+            count={picture.signals.length || undefined}
+            aside={picture.signals.length > 0 ? "ranked by cost of ignoring" : undefined}
+          >
             {picture.signals.length === 0 ? (
               <Card>
                 <Empty
@@ -75,7 +92,12 @@ export default async function TodayPage() {
             ) : (
               <div className="flex flex-col gap-2.5">
                 {[...urgent, ...rest].slice(0, 8).map((signal) => (
-                  <SignalCard key={signal.id} signal={signal} clientName={signal.clientId ? clientNames.get(signal.clientId) : null} />
+                  <SignalCard
+                    key={signal.id}
+                    signal={signal}
+                    clientName={signal.clientId ? clientNames.get(signal.clientId) : null}
+                    clientColor={signal.clientId ? clientColors.get(signal.clientId) : null}
+                  />
                 ))}
                 {picture.signals.length > 8 && (
                   <p className="px-1 text-[12px] text-muted">
@@ -84,52 +106,59 @@ export default async function TodayPage() {
                 )}
               </div>
             )}
-          </section>
+          </Zone>
 
-          <Card>
-            <CardTitle action={<Link href="/tasks" className="btn btn-ghost btn-sm">All tasks</Link>}>
-              Today&apos;s list
-            </CardTitle>
+          <Zone
+            title="Today's list"
+            icon={<ListTodo size={14} strokeWidth={2.2} />}
+            tone="brand"
+            aside={<Link href="/tasks" className="underline">all tasks</Link>}
+          >
+            <Card className="mb-3">
+              <QuickAdd clients={clientOptions} projects={projectOptions} />
+              <QuickAddHint />
+            </Card>
 
-            <QuickAdd clients={clientOptions} projects={projectOptions} />
-            <QuickAddHint />
-
-            {picture.overdue.length > 0 && (
-              <div className="mt-4">
-                <div className="mb-1.5 flex items-center gap-2">
-                  <span className="section-title" style={{ color: "var(--color-urgent)" }}>
-                    Overdue
-                  </span>
-                  <Chip tone="urgent" solid>{picture.overdue.length}</Chip>
+            <div className="flex flex-col gap-2.5">
+              {picture.overdue.length > 0 && (
+                <div className="panel" style={toneStyle("urgent", { strength: 0.65 })}>
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="section-title" style={{ color: "var(--color-urgent)" }}>Overdue</span>
+                    <span className="zone-count" style={{ ["--tone" as string]: "var(--color-urgent)" }}>
+                      {picture.overdue.length}
+                    </span>
+                  </div>
+                  <TaskList items={picture.overdue} emptyText="" />
                 </div>
-                <TaskList
-                  items={picture.overdue}
-                  emptyText=""
-                />
-              </div>
-            )}
+              )}
 
-            <div className="mt-4">
-              <div className="mb-1.5 section-title">Due today</div>
-              <TaskList items={picture.dueToday} emptyText="Nothing due today." />
+              <div className="panel">
+                <div className="mb-1 section-title">Due today</div>
+                <TaskList items={picture.dueToday} emptyText="Nothing due today." />
+              </div>
+
+              {picture.nextUp.length > 0 && (
+                <div className="panel panel-quiet">
+                  <div className="mb-1 section-title">High priority, no deadline pressure</div>
+                  <TaskList items={picture.nextUp} emptyText="" />
+                </div>
+              )}
             </div>
-
-            {picture.nextUp.length > 0 && (
-              <div className="mt-4">
-                <div className="mb-1.5 section-title">High priority, no deadline pressure</div>
-                <TaskList
-                  items={picture.nextUp}
-                  emptyText=""
-                />
-              </div>
-            )}
-          </Card>
+          </Zone>
         </div>
 
-        {/* ----------------------------------------------------- right column */}
-        <div className="flex flex-col gap-4">
+        {/* The supporting column: recessed ground, tighter type — reference, not demand. */}
+        <div
+          className="flex flex-col gap-3 rounded-[16px] p-3 md:p-3.5"
+          style={{ background: "var(--sunken)" }}
+        >
           <Card>
-            <CardTitle>Today&apos;s calendar</CardTitle>
+            <CardTitle>
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarDays size={12} />
+                Today&apos;s calendar
+              </span>
+            </CardTitle>
             {picture.events.length === 0 ? (
               <Empty title="No meetings" hint="A clear day. Good one for the work that needs a run-up." />
             ) : (
@@ -152,17 +181,16 @@ export default async function TodayPage() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[13px] font-medium leading-snug">{event.title}</p>
                         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11.5px] text-muted">
-                          {clientName && (
-                            <span className="inline-flex items-center gap-1.5">
-                              <ClientDot color={clientColor} />
-                              {clientName}
-                            </span>
-                          )}
+                          {clientName && <ClientBadge name={clientName} color={clientColor} />}
                           {event.isExternal && <span>external</span>}
                           {(event.attendees?.length ?? 0) > 0 && <span>{event.attendees!.length} others</span>}
                         </div>
                       </div>
-                      {isNext && <Chip tone="brand" solid>next</Chip>}
+                      {isNext && (
+                        <span className="shrink-0">
+                          <Chip tone="brand" solid>next</Chip>
+                        </span>
+                      )}
                     </li>
                   );
                 })}

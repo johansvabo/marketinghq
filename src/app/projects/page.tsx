@@ -3,12 +3,17 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, projects, tasks } from "@/lib/db/schema";
 import { relativeDay } from "@/lib/dates";
-import { Card, Chip, ClientDot, Empty, PageHeader, Progress } from "@/components/ui";
+import { Card, Chip, ClientBadge, Empty, PageHeader, Progress, toneStyle } from "@/components/ui";
 import { NewProjectDialog } from "@/components/new-project";
 
 export const dynamic = "force-dynamic";
 
-const HEALTH_TONE = { on_track: "good", at_risk: "warn", off_track: "urgent" } as const;
+/**
+ * On track is the default state, so it gets no tint — colour is spent on
+ * exceptions only. Three green cards say nothing; one amber card among white
+ * ones says everything.
+ */
+const HEALTH_TONE = { on_track: "neutral", at_risk: "warn", off_track: "urgent" } as const;
 const STATUS_ORDER = ["active", "planning", "blocked", "done", "archived"];
 
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ client?: string; status?: string }> }) {
@@ -85,17 +90,32 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         <div className="flex flex-col gap-5">
           {[...byClient.entries()].map(([clientName, list]) => (
             <section key={clientName}>
-              <div className="mb-2 flex items-center gap-2">
-                <ClientDot color={list[0]?.clientColor} />
-                <h2 className="text-[13px] font-semibold tracking-tight">{clientName}</h2>
-                <span className="text-[11.5px] text-muted">{list.length}</span>
+              <div
+                className="mb-2.5 flex items-center gap-2.5 rounded-[10px] px-3 py-2"
+                style={{
+                  background: `color-mix(in oklch, ${list[0]?.clientColor ?? "var(--ink-muted)"} 12%, var(--surface))`,
+                  borderLeft: `3px solid ${list[0]?.clientColor ?? "var(--ink-muted)"}`,
+                }}
+              >
+                <h2 className="text-[13.5px] font-semibold tracking-tight">{clientName}</h2>
+                <span className="text-[11.5px] text-muted">
+                  {list.length} project{list.length === 1 ? "" : "s"}
+                </span>
+                <span className="ml-auto text-[11.5px] text-muted">
+                  {list.reduce((sum, r) => sum + Number(r.openTasks), 0)} open
+                </span>
               </div>
 
               <div className="grid gap-2.5 md:grid-cols-2">
                 {list.map(({ project, openTasks, totalTasks }) => {
                   const overdue = project.dueDate && project.dueDate < new Date() && project.status !== "done";
                   return (
-                    <Link key={project.id} href={`/projects/${project.id}`} className="card p-4 transition-colors hover:border-[var(--ink-muted)]">
+                    <Link
+                      key={project.id}
+                      href={`/projects/${project.id}`}
+                      className="card p-4 transition-colors hover:border-[var(--ink-muted)]"
+                      style={toneStyle(HEALTH_TONE[project.health as keyof typeof HEALTH_TONE], { strength: 0.55 })}
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="text-[14px] font-semibold leading-snug tracking-[-0.01em]">{project.name}</h3>
                         <Chip tone={HEALTH_TONE[project.health as keyof typeof HEALTH_TONE] ?? "neutral"} solid>

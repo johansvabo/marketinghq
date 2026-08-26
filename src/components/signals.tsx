@@ -6,11 +6,19 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Check, Clock, Info, X } from "lucide-react";
 import type { Signal } from "@/lib/db/schema";
 import { actOnSignal, dismissSignal, snoozeSignal } from "@/server/actions";
-import { Chip, SEVERITY_TONE } from "./ui";
+import { ClientBadge, SEVERITY_TONE, toneStyle } from "./ui";
 
 const SEVERITY_ICON = { urgent: AlertTriangle, important: Clock, fyi: Info } as const;
 
-export function SignalCard({ signal, clientName }: { signal: Signal; clientName?: string | null }) {
+export function SignalCard({
+  signal,
+  clientName,
+  clientColor,
+}: {
+  signal: Signal;
+  clientName?: string | null;
+  clientColor?: string | null;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -36,10 +44,7 @@ export function SignalCard({ signal, clientName }: { signal: Signal; clientName?
   }
 
   return (
-    <article
-      className="card rise relative overflow-hidden p-4"
-      style={{ borderLeft: `2px solid ${accent}` }}
-    >
+    <article className="card rise relative overflow-hidden p-4" style={toneStyle(tone, { spine: true })}>
       <div className="flex items-start gap-3">
         <span className="mt-0.5 shrink-0" style={{ color: accent }}>
           <Icon size={16} strokeWidth={2.1} />
@@ -48,7 +53,7 @@ export function SignalCard({ signal, clientName }: { signal: Signal; clientName?
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[14px] font-semibold leading-snug tracking-[-0.01em]">{signal.title}</h3>
-            {clientName && <Chip tone="neutral">{clientName}</Chip>}
+            {clientName && <ClientBadge name={clientName} color={clientColor} />}
           </div>
 
           {signal.body && <p className="mt-1.5 text-[13px] leading-relaxed text-soft">{signal.body}</p>}

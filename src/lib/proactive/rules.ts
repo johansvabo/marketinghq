@@ -44,6 +44,13 @@ export type RuleContext = { now: Date };
 
 const SEVERITY_BASE = { urgent: 70, important: 40, fyi: 15 } as const;
 
+/**
+ * "Urgent" has to stay rare or it stops meaning anything — and the Today feed
+ * paints it, so an over-generous threshold turns the whole page red and costs
+ * you the overview it exists to give. The bar: something is lost today if this
+ * is ignored. Everything else is important, which is not the same as urgent.
+ */
+
 /** Signals compete for the top of the Today list; score decides who wins. */
 function score(severity: keyof typeof SEVERITY_BASE, urgencyBoost = 0) {
   return SEVERITY_BASE[severity] + urgencyBoost;
@@ -74,7 +81,7 @@ const reportsDue: Rule = {
 
       const late = until < 0;
       const drafted = run.status === "drafted";
-      const severity = late ? "urgent" : until <= 1 ? "urgent" : "important";
+      const severity = late || (until <= 1 && !drafted) ? "urgent" : "important";
 
       out.push({
         key: `report_due:${run.id}`,
@@ -124,7 +131,7 @@ const overdueTasks: Rule = {
 
     return rows.map(({ task, client }) => {
       const late = Math.abs(daysUntil(task.dueDate, now) ?? 0);
-      const severity = late >= 3 || task.priority === 1 ? "urgent" : "important";
+      const severity = late >= 7 || (late >= 3 && task.priority === 1) ? "urgent" : "important";
       return {
         key: `task_overdue:${task.id}`,
         rule: "task_overdue",
@@ -258,7 +265,7 @@ const projectDeadlineRisk: Rule = {
       const calendarSpent = until <= 0 ? 100 : Math.round(((14 - until) / 14) * 100);
       if (pct >= calendarSpent && until > 0) continue;
 
-      const severity = until <= 0 ? "urgent" : until <= 3 ? "urgent" : "important";
+      const severity = until < 0 ? "urgent" : "important";
       out.push({
         key: `project_deadline_risk:${project.id}`,
         rule: "project_deadline_risk",
@@ -295,7 +302,7 @@ const awaitingReply: Rule = {
 
     return rows.map(({ message, client }) => {
       const waiting = daysSince(message.receivedAt, now) ?? 0;
-      const severity = waiting >= 5 ? "urgent" : "important";
+      const severity = waiting >= 7 ? "urgent" : "important";
       return {
         key: `email_awaiting_reply:${message.id}`,
         rule: "email_awaiting_reply",
@@ -337,7 +344,7 @@ const meetingPrep: Rule = {
 
     return rows.map(({ event, client }) => {
       const hours = Math.max(0, Math.round((event.startsAt.getTime() - now.getTime()) / 3_600_000));
-      const severity = hours <= 24 ? "urgent" : "important";
+      const severity = hours <= 6 ? "urgent" : "important";
       return {
         key: `meeting_prep:${event.id}`,
         rule: "meeting_prep",
@@ -518,7 +525,7 @@ const metricAnomalies: Rule = {
           // Rising spend on its own is not bad news — only flag it when it is not buying more.
           if (check.label === "spend" && delta > 0 && (now_.conversions ?? 0) >= (prev.conversions ?? 0)) continue;
 
-          const severity = bad && Math.abs(pct) >= 40 ? "urgent" : bad ? "important" : "fyi";
+          const severity = bad && Math.abs(pct) >= 50 ? "urgent" : bad ? "important" : "fyi";
           out.push({
             key: `metric_shift:${client.id}:${source}:${check.label}`,
             rule: "metric_shift",

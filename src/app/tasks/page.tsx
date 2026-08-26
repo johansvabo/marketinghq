@@ -3,7 +3,8 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, projects, tasks } from "@/lib/db/schema";
 import { addDays, endOfDay, relativeDay, startOfDay } from "@/lib/dates";
-import { Card, CardTitle, Chip, Empty, PageHeader } from "@/components/ui";
+import { AlarmClock, CalendarCheck, CalendarClock, Inbox, PauseCircle, Sparkles } from "lucide-react";
+import { Card, Empty, PageHeader, toneStyle, Zone } from "@/components/ui";
 import { TaskList, type TaskRowData } from "@/components/tasks";
 import { QuickAdd, QuickAddHint } from "@/components/quick-add";
 
@@ -21,13 +22,14 @@ function bucketOf(task: TaskRowData["task"], now: Date): string {
   return "later";
 }
 
+/** Each bucket is a visibly different region — that is the whole overview. */
 const BUCKETS = [
-  { key: "overdue", label: "Overdue", tone: "urgent" as const },
-  { key: "today", label: "Today", tone: "brand" as const },
-  { key: "week", label: "Next 7 days", tone: "neutral" as const },
-  { key: "waiting", label: "Waiting on someone else", tone: "info" as const },
-  { key: "later", label: "Later", tone: "neutral" as const },
-  { key: "someday", label: "No date", tone: "neutral" as const },
+  { key: "overdue", label: "Overdue", tone: "urgent" as const, icon: AlarmClock, tint: 0.6 },
+  { key: "today", label: "Today", tone: "brand" as const, icon: CalendarCheck, tint: 0.55 },
+  { key: "week", label: "Next 7 days", tone: "neutral" as const, icon: CalendarClock, tint: 0 },
+  { key: "waiting", label: "Waiting on someone else", tone: "info" as const, icon: PauseCircle, tint: 0.5 },
+  { key: "later", label: "Later", tone: "neutral" as const, icon: Inbox, tint: 0 },
+  { key: "someday", label: "No date", tone: "neutral" as const, icon: Inbox, tint: 0 },
 ];
 
 export default async function TasksPage({
@@ -64,7 +66,10 @@ export default async function TasksPage({
     grouped.get(key)!.push(row);
   }
 
-  const buckets = view === "done" ? [{ key: "done", label: "Completed", tone: "good" as const }] : BUCKETS;
+  const buckets =
+    view === "done"
+      ? [{ key: "done", label: "Completed", tone: "good" as const, icon: Sparkles, tint: 0.5 }]
+      : BUCKETS;
 
   return (
     <>
@@ -110,16 +115,17 @@ export default async function TasksPage({
           {buckets.map((bucket) => {
             const items = grouped.get(bucket.key) ?? [];
             if (items.length === 0) return null;
+            const Icon = bucket.icon;
             return (
-              <Card key={bucket.key}>
-                <CardTitle action={<Chip tone={bucket.tone} solid={bucket.tone !== "neutral"}>{items.length}</Chip>}>
-                  {bucket.label}
-                </CardTitle>
-                <TaskList
-                  items={items}
-                  emptyText=""
-                />
-              </Card>
+              <section
+                key={bucket.key}
+                className="card p-4 md:p-5"
+                style={bucket.tint > 0 ? toneStyle(bucket.tone, { strength: bucket.tint }) : undefined}
+              >
+                <Zone title={bucket.label} icon={<Icon size={14} strokeWidth={2.2} />} tone={bucket.tone} count={items.length}>
+                  <TaskList items={items} emptyText="" />
+                </Zone>
+              </section>
             );
           })}
         </div>

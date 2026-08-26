@@ -5,7 +5,8 @@ import { clients, connections } from "@/lib/db/schema";
 import { comparisonWindows, iso, subDays } from "@/lib/dates";
 import { compare, formatMetric, metricLabel, series, SOURCE_LABEL, SOURCES } from "@/lib/metrics";
 import { getOpenSignals } from "@/lib/proactive/engine";
-import { Card, CardTitle, Chip, ClientDot, Delta, Empty, PageHeader, Sparkline } from "@/components/ui";
+import { Activity, TrendingUp } from "lucide-react";
+import { Card, ClientDot, Delta, Empty, PageHeader, Sparkline, Zone } from "@/components/ui";
 import { SignalCard } from "@/components/signals";
 
 export const dynamic = "force-dynamic";
@@ -66,6 +67,7 @@ export default async function InsightsPage({
 
   const shifts = metricSignals.filter((s) => s.rule === "metric_shift" && (!clientId || s.clientId === clientId));
   const clientNames = new Map(clientRows.map((c) => [c.id, c.name]));
+  const clientColors = new Map(clientRows.map((c) => [c.id, c.color]));
 
   // One sparkline per source, on the metric that best represents it.
   const sparkMetric: Record<string, string> = { ga4: "sessions", meta: "spend", google_ads: "spend", linkedin: "spend" };
@@ -116,14 +118,26 @@ export default async function InsightsPage({
       </div>
 
       {shifts.length > 0 && (
-        <section className="mb-5">
-          <CardTitle>What moved</CardTitle>
+        <div className="mb-6">
+          <Zone
+            title="What moved"
+            icon={<TrendingUp size={14} strokeWidth={2.2} />}
+            tone="urgent"
+            count={shifts.length}
+            aside="week over week"
+          >
           <div className="flex flex-col gap-2.5">
             {shifts.slice(0, 5).map((signal) => (
-              <SignalCard key={signal.id} signal={signal} clientName={signal.clientId ? clientNames.get(signal.clientId) : null} />
+              <SignalCard
+                key={signal.id}
+                signal={signal}
+                clientName={signal.clientId ? clientNames.get(signal.clientId) : null}
+                clientColor={signal.clientId ? clientColors.get(signal.clientId) : null}
+              />
             ))}
           </div>
-        </section>
+          </Zone>
+        </div>
       )}
 
       {bySource.size === 0 ? (
@@ -135,6 +149,7 @@ export default async function InsightsPage({
           />
         </Card>
       ) : (
+        <Zone title="By platform" icon={<Activity size={14} strokeWidth={2.2} />} tone="info">
         <div className="grid gap-3 md:grid-cols-2">
           {[...bySource.entries()].map(([source, rows]) => {
             const wanted = HEADLINE[source] ?? [...new Set(rows.map((r) => r.metric))];
@@ -149,7 +164,7 @@ export default async function InsightsPage({
                       {metricLabel(sparkMetric[source] ?? "spend")} over {days} days
                     </p>
                   </div>
-                  <Sparkline points={points} tone="brand" />
+                  <Sparkline points={points} />
                 </div>
 
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
@@ -172,6 +187,7 @@ export default async function InsightsPage({
             );
           })}
         </div>
+        </Zone>
       )}
 
       {missing.length > 0 && (

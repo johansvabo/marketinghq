@@ -29,41 +29,63 @@
   --color-info: oklch(0.74 0.12 240);
 }
 
+/*
+  Colour here is a channel, not decoration, and it carries exactly one meaning:
+  STATE. What something is (a client, a platform) is carried by its label — which
+  is why the four ad platforms are not colour-coded. Four hues cannot be told
+  apart reliably enough to be worth spending the budget on something the word
+  "Meta" already says. Client hues are the one identity channel, and they come
+  from a palette validated for colour-blind separation.
+*/
+
 :root {
   color-scheme: dark;
   --canvas: var(--color-canvas);
   --surface: var(--color-surface);
   --raised: var(--color-raised);
+  /* A ground that sits *below* the canvas, for regions that should recede. */
+  --sunken: oklch(0.135 0.008 265);
   --hairline: var(--color-hairline);
   --ink: var(--color-ink);
   --ink-soft: var(--color-ink-soft);
   --ink-muted: var(--color-ink-muted);
   --shadow-card: 0 1px 2px oklch(0 0 0 / 0.4), 0 8px 24px -12px oklch(0 0 0 / 0.5);
+  /* How hard a state tint hits its surface. Dark grounds need more. */
+  --tint-strength: 12%;
+  --tint-edge: 34%;
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --canvas: oklch(0.975 0.004 265);
+  /* Was 0.975 against a white card — a 2.5% step, which reads as "all white".
+     Dropping the canvas lets a white card actually lift off the page. */
+  --canvas: oklch(0.948 0.006 262);
   --surface: oklch(1 0 0);
-  --raised: oklch(0.965 0.005 265);
-  --hairline: oklch(0.90 0.006 265);
-  --ink: oklch(0.22 0.012 265);
+  --raised: oklch(0.972 0.005 262);
+  --sunken: oklch(0.918 0.009 262);
+  --hairline: oklch(0.885 0.007 262);
+  --ink: oklch(0.21 0.012 265);
   --ink-soft: oklch(0.40 0.014 265);
-  --ink-muted: oklch(0.55 0.014 265);
-  --shadow-card: 0 1px 2px oklch(0.5 0.02 265 / 0.06), 0 8px 24px -14px oklch(0.4 0.03 265 / 0.18);
+  --ink-muted: oklch(0.53 0.014 265);
+  --shadow-card: 0 1px 2px oklch(0.5 0.02 265 / 0.05), 0 10px 26px -16px oklch(0.4 0.03 265 / 0.22);
+  --tint-strength: 11%;
+  --tint-edge: 32%;
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --canvas: oklch(0.975 0.004 265);
+    --canvas: oklch(0.948 0.006 262);
     --surface: oklch(1 0 0);
-    --raised: oklch(0.965 0.005 265);
-    --hairline: oklch(0.90 0.006 265);
-    --ink: oklch(0.22 0.012 265);
+    --raised: oklch(0.972 0.005 262);
+    --sunken: oklch(0.918 0.009 262);
+    --hairline: oklch(0.885 0.007 262);
+    --ink: oklch(0.21 0.012 265);
     --ink-soft: oklch(0.40 0.014 265);
-    --ink-muted: oklch(0.55 0.014 265);
-    --shadow-card: 0 1px 2px oklch(0.5 0.02 265 / 0.06), 0 8px 24px -14px oklch(0.4 0.03 265 / 0.18);
+    --ink-muted: oklch(0.53 0.014 265);
+    --shadow-card: 0 1px 2px oklch(0.5 0.02 265 / 0.05), 0 10px 26px -16px oklch(0.4 0.03 265 / 0.22);
+    --tint-strength: 8%;
+    --tint-edge: 26%;
   }
 }
 
@@ -125,6 +147,62 @@ input[type="radio"] {
 }
 
 @layer components {
+  /*
+    ZONE. A titled region. Grouping comes from the header and the spacing, not
+    from nesting a box inside a box — nested panels read as bureaucracy.
+
+    State tints and spines are applied inline by the components (see toneStyle in
+    ui.tsx): Tailwind v4 puts `@utility card` in a later cascade layer than
+    anything declared here, so a background set in this layer would silently lose
+    to card's own. Inline wins, and it has to be computed per tone anyway.
+  */
+  .zone-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding-bottom: 0.6rem;
+    margin-bottom: 0.85rem;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .zone-icon {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: color-mix(in oklch, var(--tone, var(--ink-muted)) 16%, var(--surface));
+    color: var(--tone, var(--ink-muted));
+    flex-shrink: 0;
+  }
+  .zone-title {
+    font-size: 0.8125rem;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .zone-count {
+    margin-left: auto;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--tone, var(--ink-muted)) 18%, var(--surface));
+    color: color-mix(in oklch, var(--tone, var(--ink-muted)) 75%, var(--ink));
+  }
+
+  /* Peer regions that compete for attention (the task buckets). */
+  .panel {
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-card);
+    padding: 0.9rem 1rem 0.6rem;
+    background: var(--surface);
+  }
+  .panel-quiet {
+    background: transparent;
+    border-style: dashed;
+    border-color: color-mix(in oklch, var(--hairline) 70%, transparent);
+  }
+
   .btn {
     display: inline-flex;
     align-items: center;

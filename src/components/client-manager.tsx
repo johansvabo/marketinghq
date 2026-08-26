@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, UserPlus } from "lucide-react";
 import { createClient, createStakeholder, logStakeholderContact } from "@/server/actions";
-import { Card, CardTitle, Chip, ClientDot, Empty } from "./ui";
+import { Card, CardTitle, Chip, ClientBadge, Empty } from "./ui";
 
 type Person = {
   id: string;
@@ -25,7 +25,13 @@ type ClientInfo = {
   stakeholders: Person[];
 };
 
-const PALETTE = ["#6366f1", "#ec4899", "#14b8a6", "#f59e0b", "#8b5cf6", "#06b6d4", "#ef4444", "#84cc16"];
+/**
+ * Client colour is the one place hue carries identity, so these are not picked
+ * by eye. This is a validated categorical order — every adjacent pair clears the
+ * colour-blind separation floor in both themes (checked with the dataviz
+ * validator). Client names always appear alongside, so hue never works alone.
+ */
+const PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
 
 export function ClientManager({ clients }: { clients: ClientInfo[] }) {
   const router = useRouter();
@@ -140,8 +146,7 @@ export function ClientManager({ clients }: { clients: ClientInfo[] }) {
           {clients.map((client) => (
             <Card key={client.id}>
               <div className="flex flex-wrap items-center gap-2">
-                <ClientDot color={client.color} />
-                <h3 className="text-[14px] font-semibold tracking-tight">{client.name}</h3>
+                <ClientBadge name={client.name} color={client.color} size="md" />
                 <Chip tone="neutral">{client.engagement}</Chip>
                 {client.emailDomains.length > 0 && (
                   <span className="text-[11.5px] text-muted">{client.emailDomains.join(", ")}</span>
