@@ -164,6 +164,36 @@ already run, instead of retyping them.
 
 ---
 
+## Getting a newer version
+
+A downloaded ZIP is a snapshot — it doesn't update itself. When I've pushed
+changes and you want to see them:
+
+1. In Terminal, press **Control-C** to stop the running app
+2. Download a fresh ZIP (same as Step 1) and unzip it
+3. **Move the old folder to the Trash** so you don't muddle them up
+4. `cd` into the new folder (the drag trick again)
+5. Run these three:
+
+```
+npm install
+npm run db:push
+npm run dev
+```
+
+`npm install` is quick when nothing has changed. `npm run db:push` updates the
+database structure without touching what's in it.
+
+> **Use `db:push`, not `setup`, once you have real data in there.**
+> `npm run setup` re-runs the demo seed, which **wipes everything first**. It's
+> the right command on day one and the wrong one after that.
+
+**Tired of re-downloading?** Once you're using this properly, ask me to switch
+you to `git` — then updating becomes one command, `git pull`, and your data and
+folder stay put. It's a ten-minute one-time setup.
+
+---
+
 ## When something goes wrong
 
 | What you see | What it means | What to do |
