@@ -1,7 +1,7 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { isSignedIn } from "@/lib/auth";
 import { MAX_UPLOAD_BYTES, UPLOAD_ACCEPT } from "@/lib/documents/extract";
-import { blobToken, storageConfigured } from "@/lib/storage";
+import { blobAccess, blobToken, storageConfigured } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -32,6 +32,7 @@ export async function POST(request: Request) {
       token: blobToken(),
       onBeforeGenerateToken: async () => ({
         allowedContentTypes: undefined,
+        access: blobAccess(),
         addRandomSuffix: true,
         maximumSizeInBytes: MAX_UPLOAD_BYTES,
         allowOverwrite: false,

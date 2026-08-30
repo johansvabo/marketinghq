@@ -39,10 +39,12 @@ export function DocumentList({
   clientId,
   documents,
   storageOn,
+  access,
 }: {
   clientId: string;
   documents: Document[];
   storageOn: boolean;
+  access: "public" | "private";
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -83,7 +85,7 @@ export function DocumentList({
 
   return (
     <div className="flex flex-col gap-2.5">
-      <DocumentUpload clientId={clientId} storageOn={storageOn} />
+      <DocumentUpload clientId={clientId} storageOn={storageOn} access={access} />
 
       {!storageOn && documents.some((d) => d.fileName && !d.fileUrl) && (
         <p className="text-[11.5px] leading-relaxed text-muted">
@@ -172,9 +174,9 @@ export function DocumentList({
                   {doc.pinned && <Chip tone="brand">pinned</Chip>}
 
                   <div className="ml-auto flex items-center gap-0.5">
-                    {doc.fileUrl && (
+                    {doc.filePathname && (
                       <a
-                        href={doc.fileUrl}
+                        href={`/api/documents/${doc.id}/file`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="btn btn-ghost btn-sm"

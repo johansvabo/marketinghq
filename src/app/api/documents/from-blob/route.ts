@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
 import { isSignedIn } from "@/lib/auth";
 import { extractFromFile, titleFromFileName } from "@/lib/documents/extract";
+import { readFile } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const maxDuration = 250;
@@ -32,10 +33,12 @@ export async function POST(request: Request) {
   let kind = "reference";
 
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Could not read the stored file back (${response.status}).`);
+    // Private blobs are not fetchable anonymously, so read it back with the
+    // token rather than over a plain URL.
+    const stored = await readFile(pathname);
+    if (!stored) throw new Error("The stored file could not be read back.");
 
-    const file = new File([await response.blob()], fileName, { type: fileType || undefined });
+    const file = new File([await new Response(stored.stream).blob()], fileName, { type: fileType || undefined });
     const extraction = await extractFromFile(file);
     text = extraction.text;
     note = extraction.note ?? null;

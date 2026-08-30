@@ -23,7 +23,16 @@ type Result = {
  * Drag a file anywhere on the drop zone, or click to pick. Multiple at once is
  * the normal case — a client handover is rarely one file.
  */
-export function DocumentUpload({ clientId, storageOn }: { clientId: string; storageOn: boolean }) {
+export function DocumentUpload({
+  clientId,
+  storageOn,
+  access,
+}: {
+  clientId: string;
+  storageOn: boolean;
+  /** Must match the store's own setting — a private store rejects public blobs. */
+  access: "public" | "private";
+}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -52,7 +61,7 @@ export function DocumentUpload({ clientId, storageOn }: { clientId: string; stor
         }
 
         const blob = await upload(file.name, file, {
-          access: "public",
+          access,
           handleUploadUrl: "/api/documents/blob-token",
           multipart: file.size > MULTIPART_THRESHOLD_BYTES,
           contentType: file.type || undefined,

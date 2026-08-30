@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { db, dbInitError } from "@/lib/db";
 import { env, isConfigured } from "@/lib/env";
 import { looksLikeAPastedBlock } from "@/lib/config-warnings";
-import { storageConfigured } from "@/lib/storage";
+import { blobTokenSource, storageConfigured } from "@/lib/storage";
 
 export type HealthState = "ok" | "warn" | "error";
 
@@ -175,12 +175,15 @@ function configChecks(): Check[] {
 
   checks.push(
     storageConfigured()
-      ? { label: "File storage", state: "ok", hint: "originals kept" }
+      ? { label: "File storage", state: "ok", hint: `on · ${blobTokenSource()}` }
       : {
           label: "File storage",
           state: "warn",
-          hint: "text only",
-          fix: "Uploads still work and their text is stored and searchable, but the original files are not kept. Add a Blob store in Vercel under Storage to keep them.",
+          hint: "no token found",
+          fix:
+            "Uploads work and their text is stored, but files are capped at 4 MB and originals are not kept. " +
+            "The app found no variable whose name ends in BLOB_READ_WRITE_TOKEN. In Vercel: Storage → your Blob store → " +
+            "make sure it is connected to this project, then check Environment Variables for the token and redeploy.",
         },
   );
 
