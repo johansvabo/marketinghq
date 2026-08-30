@@ -85,23 +85,52 @@ export async function systemHealth(): Promise<Check[]> {
   return [...checks, ...configChecks()];
 }
 
+/**
+ * Spots the common paste mistakes: the variable's own name pasted in with its
+ * value, several variables pasted into one box, or stray line breaks.
+ */
+function looksLikeAPastedBlock(value: string | undefined): string | null {
+  if (!value) return null;
+
+  if (/\r|\n/.test(value)) return "contains more than one line — it looks like several variables were pasted into one box.";
+  if (/^\s*AUTH_SECRET\b/i.test(value)) return "starts with its own name, so the name got pasted in along with the value.";
+  if (/\b(ENCRYPTION_KEY|CRON_SECRET|MCP_TOKEN|TURSO_[A-Z_]+|ANTHROPIC_API_KEY)\b/i.test(value)) {
+    return "contains the name of another variable, so several were pasted into one box.";
+  }
+  if (/\s{2,}/.test(value)) return "contains runs of spaces, which a generated secret never does.";
+
+  return null;
+}
+
 /** The checks that only read configuration, so they work even with no database. */
 function configChecks(): Check[] {
   const checks: Check[] = [];
 
-  // Is this deployment actually locked?
   const deployed = env.appUrl.startsWith("https://");
+
+  // A value that still carries its own name, or several values at once, is the
+  // classic environment-variable paste error. It fails silently — the passcode
+  // simply never matches — so name it rather than leaving it to be guessed at.
+  const pasteProblem = looksLikeAPastedBlock(env.authSecret);
+
   checks.push(
-    env.authSecret
-      ? { label: "Passcode lock", state: "ok", hint: "on" }
-      : {
+    pasteProblem
+      ? {
           label: "Passcode lock",
-          state: deployed ? "error" : "warn",
-          hint: "off",
-          fix: deployed
-            ? "This deployment is open to anyone with the URL. Set AUTH_SECRET and redeploy."
-            : "Fine locally. Set AUTH_SECRET before deploying.",
-        },
+          state: "error",
+          hint: "value looks wrong",
+          fix: `AUTH_SECRET ${pasteProblem} Each variable needs its own entry — the Key box holds the name, the Value box holds only that one value, on a single line. Fix it and redeploy.`,
+        }
+      : env.authSecret
+        ? { label: "Passcode lock", state: "ok", hint: "on" }
+        : {
+            label: "Passcode lock",
+            state: deployed ? "error" : "warn",
+            hint: "off",
+            fix: deployed
+              ? "This deployment is open to anyone with the URL. Set AUTH_SECRET and redeploy."
+              : "Fine locally. Set AUTH_SECRET before deploying.",
+          },
   );
 
   // 4. Does the app know its own address? OAuth redirects are built from it.
