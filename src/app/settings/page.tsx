@@ -17,16 +17,46 @@ const STATE_COLOR: Record<HealthState, string> = {
   error: "var(--color-urgent)",
 };
 
-export default async function SettingsPage() {
-  const [connectionRows, clientRows, stakeholderRows, recentSyncs, health] = await Promise.all([
-    db.select().from(connections),
-    db.select().from(clients).orderBy(clients.name),
-    db.select().from(stakeholders),
-    db.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(12),
-    systemHealth(),
-  ]);
+type SettingsData = {
+  connectionRows: (typeof connections.$inferSelect)[];
+  clientRows: (typeof clients.$inferSelect)[];
+  stakeholderRows: (typeof stakeholders.$inferSelect)[];
+  recentSyncs: (typeof syncRuns.$inferSelect)[];
+  failed: boolean;
+};
 
+const EMPTY: SettingsData = {
+  connectionRows: [],
+  clientRows: [],
+  stakeholderRows: [],
+  recentSyncs: [],
+  failed: true,
+};
+
+async function loadSettingsData(): Promise<SettingsData> {
+  try {
+    const [connectionRows, clientRows, stakeholderRows, recentSyncs] = await Promise.all([
+      db.select().from(connections),
+      db.select().from(clients).orderBy(clients.name),
+      db.select().from(stakeholders),
+      db.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(12),
+    ]);
+    return { connectionRows, clientRows, stakeholderRows, recentSyncs, failed: false };
+  } catch {
+    // The health panel above already says why, in terms you can act on.
+    return EMPTY;
+  }
+}
+
+export default async function SettingsPage() {
+  // This is the page you come to when things are broken, so it must not need a
+  // working database to render. The health panel is computed defensively and
+  // everything else degrades to empty rather than throwing the whole page away.
+  const health = await systemHealth();
   const problems = health.filter((c) => c.state !== "ok");
+
+  const data = await loadSettingsData();
+  const { connectionRows, clientRows, stakeholderRows, recentSyncs } = data;
 
   const byProvider = new Map(connectionRows.map((c) => [c.provider, c]));
 
@@ -34,6 +64,16 @@ export default async function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" subtitle="Connections, clients and the health of the machinery behind all of it" />
+
+      {data.failed && (
+        <Card tone="urgent" className="mb-4">
+          <p className="text-[13px] font-semibold">The database could not be read</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-soft">
+            The rest of this page is empty because of it, and other pages will show an error. The System panel below says
+            what to fix. Nothing has been lost — this is a connection problem, not a data one.
+          </p>
+        </Card>
+      )}
 
       <div className="mb-5 grid gap-3 md:grid-cols-2">
         <Card tone={problems.some((c) => c.state === "error") ? "urgent" : undefined}>
