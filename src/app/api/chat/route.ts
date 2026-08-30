@@ -7,7 +7,7 @@ import { runBrain } from "@/lib/ai/brain";
 import { describeAiError } from "@/lib/ai/client";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 250;
 
 /**
  * Streams the brain's answer as server-sent events. Tool activity is streamed

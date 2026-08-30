@@ -91,6 +91,16 @@ deployment page names the reason. This is a problem with the code, not with
 anything you did: **copy the message and send it to me.** I fix it, push, and
 Vercel rebuilds by itself.
 
+> **After I push a fix, do not press Redeploy.** Redeploy rebuilds *the same
+> commit* — the broken one — so you get the identical error and it looks like
+> the fix did nothing. My push starts a new deployment on its own; wait about a
+> minute and look at the **newest** entry in the Deployments list.
+>
+> **How to tell them apart:** each deployment shows the commit message it was
+> built from, under Source. If it still shows the old message, you are looking
+> at the old build. Redeploy is the right button for picking up new environment
+> variables, and the wrong one for picking up new code.
+
 **It deployed but pages error** — it is running but cannot reach the database.
 Project → **Logs**, and look for a line starting `[marketinghq]`. It is almost
 always a mistyped Turso URL or token. Fix the variable, then **Redeploy**.

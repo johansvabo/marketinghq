@@ -5,13 +5,15 @@ import { readUpload, type SourceDocument } from "@/lib/import/files";
 
 export const runtime = "nodejs";
 /**
- * 300s is the ceiling on Vercel's Hobby plan. The extractor is given a slightly
- * shorter budget so it can finish the section it is on and hand back what it
- * found, rather than being killed mid-request.
+ * Vercel's Hobby plan rejects anything above 300s. Sitting exactly on a
+ * documented boundary to gain 50 seconds is a bad trade when being wrong costs
+ * a failed deploy, so this stays clearly inside it. The extractor gets a
+ * shorter budget still, so it can finish the section it is on and hand back
+ * what it found rather than being killed mid-request.
  */
-export const maxDuration = 300;
+export const maxDuration = 250;
 
-const TIME_BUDGET_MS = 250_000;
+const TIME_BUDGET_MS = 200_000;
 
 /** Total characters accepted in one import. Beyond this, split it up. */
 const MAX_TOTAL_CHARS = 200_000;

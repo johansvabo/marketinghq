@@ -7,7 +7,7 @@ import { runProactiveEngine } from "@/lib/proactive/engine";
 import { getOrCreateBrief } from "@/lib/brief";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 250;
 
 /**
  * The nightly pass, and the thing that makes this proactive rather than a place
