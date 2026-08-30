@@ -18,13 +18,25 @@ Vercel wipes its filesystem between requests, so the database has to live
 somewhere else. Turso is SQLite hosted — the same engine the app already uses —
 and the free tier is far bigger than this will ever need.
 
+**Check Vercel first.** In your project, open **Storage**. If Turso appears in
+the marketplace list, connecting it there creates the database *and* sets the
+variables for you — no copying, and no chance of a paste error. If it is there,
+use it and skip to Step 4.
+
+Otherwise, do it directly:
+
 1. Go to **[turso.tech](https://turso.tech)** → sign up (GitHub login is fine)
-2. Create a database. Name it `marketinghq`. Take the region nearest you.
-3. On the database page, find and copy two things — paste them somewhere
-   temporary, you'll need them in Step 3:
-   - the **database URL** (starts `libsql://`)
-   - a **token**, from the button for creating one (Turso calls it an auth
-     token). Give it read & write.
+2. Create a database — name it `marketinghq`, take the region nearest you
+3. Open the database and copy two things:
+   - the **database URL**. It starts `libsql://` — if what you copied doesn't,
+     you have the wrong string
+   - an **auth token**, from the button that creates one. Read & write.
+
+Paste both somewhere temporary; they go into Vercel in Step 3. The token is
+usually shown once.
+
+Without these two the app has no database at all, and every page will show an
+error however green the build was.
 
 That is the entire database setup. You will never run a migration by hand — the
 app applies its own on boot.

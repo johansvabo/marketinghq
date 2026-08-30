@@ -11,8 +11,20 @@ function opt(name: string): string | undefined {
 
 export const env = {
   databaseUrl: opt("DATABASE_URL") ?? "file:./data/marketinghq.db",
-  tursoUrl: opt("TURSO_DATABASE_URL"),
-  tursoToken: opt("TURSO_AUTH_TOKEN"),
+
+  /*
+   * Hosted-database settings, under any of the names they arrive with. Turso's
+   * own docs say TURSO_DATABASE_URL, but a one-click marketplace integration may
+   * inject a different name, and a libsql:// address pasted into DATABASE_URL is
+   * a reasonable thing to do. Accept all of them rather than failing over a
+   * label.
+   */
+  tursoUrl:
+    opt("TURSO_DATABASE_URL") ??
+    opt("TURSO_URL") ??
+    opt("LIBSQL_URL") ??
+    (opt("DATABASE_URL")?.startsWith("libsql://") ? opt("DATABASE_URL") : undefined),
+  tursoToken: opt("TURSO_AUTH_TOKEN") ?? opt("TURSO_TOKEN") ?? opt("LIBSQL_AUTH_TOKEN"),
 
   appUrl: opt("APP_URL") ?? "http://localhost:3000",
   authSecret: opt("AUTH_SECRET"),

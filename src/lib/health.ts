@@ -22,6 +22,23 @@ export type Check = {
 export async function systemHealth(): Promise<Check[]> {
   const checks: Check[] = [];
   const hosted = Boolean(env.tursoUrl);
+  const deployedApp = env.appUrl.startsWith("https://");
+
+  // A deployed app with no hosted database is the commonest way to get an error
+  // page on a green build: the fallback is a local file, and there is no durable
+  // filesystem to put one on. Say so before attempting a connection that cannot
+  // work — "not set up yet" is a very different instruction from "cannot connect".
+  if (deployedApp && !hosted) {
+    checks.push({
+      label: "Database",
+      state: "error",
+      hint: "not set up",
+      fix:
+        "No hosted database is configured, so there is nowhere for anything to be stored. Create one at turso.tech, " +
+        "then add TURSO_DATABASE_URL (the libsql:// address) and TURSO_AUTH_TOKEN, and redeploy.",
+    });
+    return [...checks, ...configChecks()];
+  }
 
   // 1. Can we actually reach the database and read from it?
   let reachable = false;
