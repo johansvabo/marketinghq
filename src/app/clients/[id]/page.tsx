@@ -11,7 +11,7 @@ import { TaskList } from "@/components/tasks";
 import { InsightRow } from "@/components/insight-row";
 import { DocumentList } from "@/components/document-list";
 import { ClientNotes } from "@/components/client-notes";
-import { blobAccess, storageConfigured } from "@/lib/storage";
+import { blobAccess, storageAvailable } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,8 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
 
   const [client] = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
   if (!client) notFound();
+
+  const storage = await storageAvailable();
 
   const [projectRows, openTasks, docs, clientInsights, people, upcomingReports, movement] = await Promise.all([
     db
@@ -107,7 +109,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <div className="flex flex-col gap-4">
           <Zone title="Documents" icon={<FileText size={14} strokeWidth={2.2} />} tone="info" count={docs.length || undefined}>
-            <DocumentList clientId={id} documents={docs} storageOn={storageConfigured()} access={blobAccess()} />
+            <DocumentList clientId={id} documents={docs} storageOn={storage.ok} access={blobAccess()} />
           </Zone>
 
           <Zone title="What we know" icon={<Lightbulb size={14} strokeWidth={2.2} />} tone="brand" count={clientInsights.length || undefined}

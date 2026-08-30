@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { db, dbInitError } from "@/lib/db";
 import { env, isConfigured } from "@/lib/env";
 import { looksLikeAPastedBlock } from "@/lib/config-warnings";
-import { blobTokenSource, storageConfigured } from "@/lib/storage";
+import { blobTokenSource, storageAvailable } from "@/lib/storage";
 
 export type HealthState = "ok" | "warn" | "error";
 
@@ -39,7 +39,7 @@ export async function systemHealth(): Promise<Check[]> {
         "No hosted database is configured, so there is nowhere for anything to be stored. Create one at turso.tech, " +
         "then add TURSO_DATABASE_URL (the libsql:// address) and TURSO_AUTH_TOKEN, and redeploy.",
     });
-    return [...checks, ...configChecks()];
+    return [...checks, ...(await configChecks())];
   }
 
   // 1. Can we actually reach the database and read from it?
@@ -53,7 +53,7 @@ export async function systemHealth(): Promise<Check[]> {
       hint: "address is not valid",
       fix: `${message(dbInitError)} TURSO_DATABASE_URL should start with libsql:// and have no spaces. Fix it and redeploy.`,
     });
-    return [...checks, ...configChecks()];
+    return [...checks, ...(await configChecks())];
   }
 
   try {
@@ -101,11 +101,11 @@ export async function systemHealth(): Promise<Check[]> {
     }
   }
 
-  return [...checks, ...configChecks()];
+  return [...checks, ...(await configChecks())];
 }
 
 /** The checks that only read configuration, so they work even with no database. */
-function configChecks(): Check[] {
+async function configChecks(): Promise<Check[]> {
   const checks: Check[] = [];
 
   const deployed = env.appUrl.startsWith("https://");
@@ -173,17 +173,22 @@ function configChecks(): Check[] {
         },
   );
 
+  const storage = await storageAvailable();
   checks.push(
-    storageConfigured()
-      ? { label: "File storage", state: "ok", hint: `on · ${blobTokenSource()}` }
+    storage.ok
+      ? {
+          label: "File storage",
+          state: "ok",
+          hint: blobTokenSource() ? `on · ${blobTokenSource()}` : "on",
+        }
       : {
           label: "File storage",
           state: "warn",
-          hint: "no token found",
+          hint: "not reachable",
           fix:
-            "Uploads work and their text is stored, but files are capped at 4 MB and originals are not kept. " +
-            "The app found no variable whose name ends in BLOB_READ_WRITE_TOKEN. In Vercel: Storage → your Blob store → " +
-            "make sure it is connected to this project, then check Environment Variables for the token and redeploy.",
+            `Uploads work and their text is stored, but files are capped at 4 MB and originals are not kept. ` +
+            `The store said: ${storage.reason ?? "no reason given"}. ` +
+            `In Vercel: Storage → your Blob store → confirm it is connected to this project, then redeploy.`,
         },
   );
 

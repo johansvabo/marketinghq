@@ -1,7 +1,7 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { isSignedIn } from "@/lib/auth";
 import { MAX_UPLOAD_BYTES, UPLOAD_ACCEPT } from "@/lib/documents/extract";
-import { blobAccess, blobToken, storageConfigured } from "@/lib/storage";
+import { blobAccess, blobToken, storageAvailable } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -16,9 +16,10 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   if (!(await isSignedIn())) return new Response("Unauthorized", { status: 401 });
 
-  if (!storageConfigured()) {
+  const storage = await storageAvailable();
+  if (!storage.ok) {
     return Response.json(
-      { error: "No file storage is configured. Add a Blob store in Vercel under Storage, then redeploy." },
+      { error: `File storage is not reachable. The store said: ${storage.reason ?? "no reason given"}` },
       { status: 400 },
     );
   }
