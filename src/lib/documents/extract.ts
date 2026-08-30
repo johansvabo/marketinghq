@@ -1,5 +1,6 @@
 import mammoth from "mammoth";
 import { extractText, getDocumentProxy } from "unpdf";
+import { formatBytes, IMAGE_EXTENSIONS, MAX_UPLOAD_BYTES, PLAIN_EXTENSIONS } from "./limits";
 
 /**
  * Turns an uploaded file into readable text.
@@ -17,32 +18,7 @@ export type Extraction = {
   suggestedKind: string;
 };
 
-const PLAIN = [".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".log"];
-const IMAGE = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".heic"];
 
-export const UPLOAD_ACCEPT = [...PLAIN, ".pdf", ".docx", ".rtf", ".html", ...IMAGE].join(",");
-
-/**
- * Two different ceilings, and it matters which one applies.
- *
- * Uploading straight to blob storage from the browser bypasses the serverless
- * function, so the only limit is what we choose: 100 MB, comfortably more than
- * any brand book.
- *
- * Without blob storage the file has to travel through a serverless function,
- * whose request body the platform caps at a few megabytes — going over fails at
- * the platform with an opaque error before any of this code runs. So that path
- * gets a deliberately conservative cap it can actually enforce, with a message
- * that explains itself.
- */
-export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
-export const MAX_DIRECT_POST_BYTES = 4 * 1024 * 1024;
-
-/** Above this, upload in parallel parts so a big file survives a wobbly line. */
-export const MULTIPART_THRESHOLD_BYTES = 8 * 1024 * 1024;
-
-export const formatBytes = (bytes: number) =>
-  bytes >= 1024 * 1024 ? `${Math.round(bytes / (1024 * 1024))} MB` : `${Math.round(bytes / 1024)} KB`;
 
 const ends = (name: string, list: string[]) => list.some((ext) => name.endsWith(ext));
 
@@ -83,11 +59,11 @@ export async function extractFromFile(file: File): Promise<Extraction> {
     return { text: value.trim(), suggestedKind: "brief" };
   }
 
-  if (ends(name, PLAIN) || file.type.startsWith("text/")) {
+  if (ends(name, PLAIN_EXTENSIONS) || file.type.startsWith("text/")) {
     return { text: (await file.text()).trim(), suggestedKind: name.endsWith(".csv") ? "research" : "note" };
   }
 
-  if (ends(name, IMAGE) || file.type.startsWith("image/")) {
+  if (ends(name, IMAGE_EXTENSIONS) || file.type.startsWith("image/")) {
     return {
       text: "",
       note: "Image stored. There is no text to search, but you can open it from here.",
@@ -115,3 +91,5 @@ export function titleFromFileName(name: string): string {
     .trim()
     .replace(/^./, (c) => c.toUpperCase());
 }
+
+export { formatBytes, MAX_DIRECT_POST_BYTES, MAX_UPLOAD_BYTES, UPLOAD_ACCEPT } from "./limits";

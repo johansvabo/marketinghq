@@ -11,7 +11,7 @@ import {
   MAX_UPLOAD_BYTES,
   MULTIPART_THRESHOLD_BYTES,
   UPLOAD_ACCEPT,
-} from "@/lib/documents/extract";
+} from "@/lib/documents/limits";
 
 type Result = {
   created: { title: string; hasText: boolean; stored: boolean }[];
@@ -168,9 +168,14 @@ export function DocumentUpload({ clientId, storageOn }: { clientId: string; stor
             <p className="text-[13px] font-medium">Drop files here, or click to choose</p>
             <p className="text-[11.5px] leading-relaxed text-muted">
               PDF, Word, text, markdown, CSV and images. The text is pulled out and made searchable.
+            </p>
+            <p
+              className="text-[11.5px] font-semibold"
+              style={{ color: storageOn ? "var(--color-good)" : "var(--color-warn)" }}
+            >
               {storageOn
-                ? ` Up to ${formatBytes(MAX_UPLOAD_BYTES)} each, original kept.`
-                : ` Up to ${formatBytes(MAX_DIRECT_POST_BYTES)} each until file storage is set up.`}
+                ? `File storage on · up to ${formatBytes(MAX_UPLOAD_BYTES)} each, originals kept`
+                : `File storage off · ${formatBytes(MAX_DIRECT_POST_BYTES)} limit — connect a Blob store in Vercel to lift it`}
             </p>
           </>
         )}
