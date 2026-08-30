@@ -71,6 +71,9 @@ export type ExtractionProgress =
   | { type: "entries"; entries: Candidate[] }
   | { type: "note"; message: string };
 
+/** Everything found before the deadline, plus whether there is more to do. */
+export type ExtractionResult = { entries: Candidate[]; stoppedEarly: boolean; remaining: number };
+
 async function clientNames(): Promise<string[]> {
   const rows = await db.select({ name: clients.name }).from(clients);
   return rows.map((r) => r.name);
@@ -135,8 +138,13 @@ function normalize(entry: Candidate): Candidate {
  */
 export async function extractCandidates(
   sources: SourceDocument[],
-  opts: { hint?: string; onProgress?: (event: ExtractionProgress) => void } = {},
-): Promise<Candidate[]> {
+  opts: {
+    hint?: string;
+    onProgress?: (event: ExtractionProgress) => void;
+    /** Stop starting new work after this time and return what was found. */
+    deadline?: number;
+  } = {},
+): Promise<ExtractionResult> {
   const names = await clientNames();
   const all: Candidate[] = [];
 
@@ -168,6 +176,18 @@ export async function extractCandidates(
   }
 
   for (const [index, unit] of units.entries()) {
+    // The host caps how long a request may run, so stop cleanly rather than
+    // being killed mid-flight: a partial import you can act on beats losing the
+    // whole run and every entry already extracted.
+    if (opts.deadline && Date.now() > opts.deadline) {
+      const remaining = units.length - index;
+      opts.onProgress?.({
+        type: "note",
+        message: `Stopped after ${index} of ${units.length} sections to stay inside the time limit. Everything found so far is below — review and save it, then import the rest separately.`,
+      });
+      return { entries: dedupe(all.filter((e) => e.title && e.body)), stoppedEarly: true, remaining };
+    }
+
     opts.onProgress?.({ type: "chunk", index: index + 1, total: units.length, label: unit.label });
 
     try {
@@ -185,7 +205,7 @@ export async function extractCandidates(
     }
   }
 
-  return dedupe(all.filter((entry) => entry.title && entry.body));
+  return { entries: dedupe(all.filter((entry) => entry.title && entry.body)), stoppedEarly: false, remaining: 0 };
 }
 
 /**

@@ -5,9 +5,5 @@
       "path": "/api/cron",
       "schedule": "0 5 * * *"
     }
-  ],
-  "functions": {
-    "src/app/api/chat/route.ts": { "maxDuration": 300 },
-    "src/app/api/cron/route.ts": { "maxDuration": 300 }
-  }
+  ]
 }

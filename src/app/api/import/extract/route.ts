@@ -4,10 +4,17 @@ import { extractCandidates } from "@/lib/ai/import";
 import { readUpload, type SourceDocument } from "@/lib/import/files";
 
 export const runtime = "nodejs";
-export const maxDuration = 800;
+/**
+ * 300s is the ceiling on Vercel's Hobby plan. The extractor is given a slightly
+ * shorter budget so it can finish the section it is on and hand back what it
+ * found, rather than being killed mid-request.
+ */
+export const maxDuration = 300;
 
-/** Total characters of pasted or uploaded text accepted in one import. */
-const MAX_TOTAL_CHARS = 400_000;
+const TIME_BUDGET_MS = 250_000;
+
+/** Total characters accepted in one import. Beyond this, split it up. */
+const MAX_TOTAL_CHARS = 200_000;
 
 export async function POST(request: Request) {
   if (!(await isSignedIn())) return new Response("Unauthorized", { status: 401 });
@@ -40,7 +47,9 @@ export async function POST(request: Request) {
   const totalChars = sources.reduce((sum, s) => sum + (s.kind === "text" ? s.text.length : 0), 0);
   if (totalChars > MAX_TOTAL_CHARS) {
     return Response.json(
-      { error: `That's ${Math.round(totalChars / 1000)}k characters. Import up to ${MAX_TOTAL_CHARS / 1000}k at a time so you can actually review the results.` },
+      {
+        error: `That's ${Math.round(totalChars / 1000)}k characters, and the limit is ${MAX_TOTAL_CHARS / 1000}k per import. Split it — a few smaller imports are easier to review honestly anyway.`,
+      },
       { status: 400 },
     );
   }
@@ -58,8 +67,10 @@ export async function POST(request: Request) {
       for (const problem of problems) send("note", { message: problem });
 
       try {
-        const entries = await extractCandidates(sources, {
+        const started = Date.now();
+        const result = await extractCandidates(sources, {
           hint,
+          deadline: started + TIME_BUDGET_MS,
           onProgress: (event) => {
             if (event.type === "chunk") send("progress", { index: event.index, total: event.total, label: event.label });
             else if (event.type === "entries") send("entries", { entries: event.entries });
@@ -67,7 +78,7 @@ export async function POST(request: Request) {
           },
         });
 
-        send("done", { total: entries.length, entries });
+        send("done", { total: result.entries.length, entries: result.entries, stoppedEarly: result.stoppedEarly });
       } catch (error) {
         send("error", { message: describeAiError(error) });
       } finally {

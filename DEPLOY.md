@@ -50,8 +50,19 @@ written daily brief, and import — those fall back or switch off cleanly.
    - If it isn't listed, click *Adjust GitHub App Permissions* and give Vercel
      access to that repository
 4. Leave every build setting alone — Vercel detects Next.js correctly
-5. Open **Environment Variables** and add these. Copy the values from the message
-   where I generated them for you:
+5. **Environment Variables — before you click Deploy.**
+
+   On the import screen there is a collapsed section called **Environment
+   Variables**. Click to expand it and add them there. It is easy to miss, and
+   the Deploy button sits right below it.
+
+   *Added them afterwards, or missed them?* No harm done. Go to your project →
+   **Settings → Environment Variables**, add them there, then **Deployments** →
+   the latest one → **⋯ → Redeploy**. A deployment reads these at build and run
+   time, so it needs a redeploy to pick up new ones. There is no way to get this
+   permanently wrong.
+
+   Add each as Name and Value, leaving all three environments ticked:
 
    | Name | Value |
    |---|---|
@@ -71,9 +82,22 @@ You'll get a URL like `marketinghq-abc123.vercel.app`. Open it. You should be
 asked for a passcode — that's `AUTH_SECRET`. Sign in and you'll find it empty and
 waiting, with its schema already built.
 
-> **Nothing loads, or you see an error page?** In Vercel: your project →
-> **Logs**. A line beginning `[marketinghq]` names the problem, and it is almost
-> always a mistyped Turso URL or token. Fix the variable, then **Redeploy**.
+### If the deploy fails
+
+Two different failures, two different places to look:
+
+**"Build Failed"** — it never got as far as running. The red box on the
+deployment page names the reason. This is a problem with the code, not with
+anything you did: **copy the message and send it to me.** I fix it, push, and
+Vercel rebuilds by itself.
+
+**It deployed but pages error** — it is running but cannot reach the database.
+Project → **Logs**, and look for a line starting `[marketinghq]`. It is almost
+always a mistyped Turso URL or token. Fix the variable, then **Redeploy**.
+
+Neither one can damage anything. A failed deploy simply leaves the previous
+version serving, and on a first deploy there is nothing to lose. Redeploying is
+always safe.
 
 ---
 
