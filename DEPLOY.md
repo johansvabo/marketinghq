@@ -123,6 +123,21 @@ always safe.
 
 ---
 
+## Step 3b — Keep uploaded files (optional, 2 min)
+
+Documents can be uploaded rather than pasted — PDFs, Word files, CSVs, images.
+The text is pulled out and made searchable either way. Keeping the **original
+file** needs somewhere to put it:
+
+1. In your Vercel project, open **Storage**
+2. Create a **Blob** store and connect it to this project
+3. Redeploy
+
+Vercel sets `BLOB_READ_WRITE_TOKEN` for you. Without it uploads still work and
+their text is stored — the file itself just is not kept, and Settings says so.
+
+---
+
 ## Step 4 — Lock in the address
 
 Some things (signing in with Google, the OAuth connections) need the app to know

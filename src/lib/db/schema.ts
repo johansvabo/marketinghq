@@ -233,8 +233,21 @@ export const documents = sqliteTable(
     kind: text("kind").notNull().default("note"),
     tags: text("tags", { mode: "json" }).$type<string[]>().default([]),
     pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
-    // manual | import
+    // manual | upload | import
     source: text("source").notNull().default("manual"),
+
+    // Set when the document came from a file. `body` then holds the extracted
+    // text — that is what gets searched and what Claude reads — while these
+    // point at the original, kept so the real thing is never lost.
+    fileName: text("file_name"),
+    fileType: text("file_type"),
+    fileSize: integer("file_size"),
+    fileUrl: text("file_url"),
+    /** Storage key, needed to delete the original when the document goes. */
+    filePathname: text("file_pathname"),
+    /** Why a file has no extracted text, when it has none. */
+    extractionNote: text("extraction_note"),
+
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

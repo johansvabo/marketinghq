@@ -24,6 +24,7 @@ import { draftReport } from "@/lib/reporting/draft";
 import { describeAiError } from "@/lib/ai/client";
 import { INSIGHT_KINDS } from "@/lib/ai/import";
 import { syncAll } from "@/lib/integrations/sync";
+import { removeFile } from "@/lib/storage";
 
 function refresh(...paths: string[]) {
   for (const path of ["/", ...paths]) revalidatePath(path);
@@ -605,7 +606,9 @@ export async function toggleDocumentPin(documentId: string) {
 }
 
 export async function deleteDocument(documentId: string) {
-  const [row] = await db.select({ clientId: documents.clientId }).from(documents).where(eq(documents.id, documentId)).limit(1);
+  const [row] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
+  // Remove the stored original too, or the blob store fills with orphans.
+  await removeFile(row?.filePathname);
   await db.delete(documents).where(eq(documents.id, documentId));
   refresh("/clients", `/clients/${row?.clientId ?? ""}`);
   return { ok: true as const };

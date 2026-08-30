@@ -42,6 +42,12 @@ and progress derived from the tasks rather than typed in. Tasks work across
 projects and clients, bucketed by when they actually need attention. Quick
 capture parses `!1` priority, `@client`, `#project` and `^fri` inline.
 
+**Clients** — the layer everything hangs off. Each client gets a hub: documents,
+captured insights, projects, standing context, people and their contact cadence,
+reports due, and 28-day performance. Documents can be **uploaded** — PDF, Word,
+text, markdown, CSV, images — with the text extracted so it is searchable and
+readable by Claude, and the original kept when a blob store is configured.
+
 **Import** — the on-ramp. Paste a pile of old notes, or hand it markdown, Word
 documents and PDFs, and Claude reads them, pulls out what will still matter in a
 year, and proposes tagged entries with the client already matched and a quoted

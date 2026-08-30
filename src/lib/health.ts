@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { db, dbInitError } from "@/lib/db";
 import { env, isConfigured } from "@/lib/env";
 import { looksLikeAPastedBlock } from "@/lib/config-warnings";
+import { storageConfigured } from "@/lib/storage";
 
 export type HealthState = "ok" | "warn" | "error";
 
@@ -169,6 +170,17 @@ function configChecks(): Check[] {
           state: "warn",
           hint: "off",
           fix: "Set ANTHROPIC_API_KEY to turn on the brain, report drafting, import and the written brief. Everything else works without it.",
+        },
+  );
+
+  checks.push(
+    storageConfigured()
+      ? { label: "File storage", state: "ok", hint: "originals kept" }
+      : {
+          label: "File storage",
+          state: "warn",
+          hint: "text only",
+          fix: "Uploads still work and their text is stored and searchable, but the original files are not kept. Add a Blob store in Vercel under Storage to keep them.",
         },
   );
 

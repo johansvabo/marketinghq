@@ -2,12 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Pin, Plus, Trash2, X } from "lucide-react";
+import { Download, FileText, Image as ImageIcon, Pin, Plus, Trash2, X } from "lucide-react";
 import { clsx } from "clsx";
 import type { Document } from "@/lib/db/schema";
 import { createDocument, deleteDocument, toggleDocumentPin, updateDocument } from "@/server/actions";
 import { Card, Chip, Empty } from "./ui";
 import { Markdown } from "./markdown";
+import { DocumentUpload } from "./document-upload";
 
 const KINDS = [
   { value: "brief", label: "Brief" },
@@ -34,7 +35,15 @@ const KIND_TONE: Record<string, "brand" | "info" | "good" | "warn" | "neutral"> 
  * Editing happens in place rather than on a separate page, because most of
  * these get amended in thirty-second bursts between other things.
  */
-export function DocumentList({ clientId, documents }: { clientId: string; documents: Document[] }) {
+export function DocumentList({
+  clientId,
+  documents,
+  storageOn,
+}: {
+  clientId: string;
+  documents: Document[];
+  storageOn: boolean;
+}) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -74,6 +83,15 @@ export function DocumentList({ clientId, documents }: { clientId: string; docume
 
   return (
     <div className="flex flex-col gap-2.5">
+      <DocumentUpload clientId={clientId} />
+
+      {!storageOn && documents.some((d) => d.fileName && !d.fileUrl) && (
+        <p className="text-[11.5px] leading-relaxed text-muted">
+          Uploaded text is stored and searchable, but the original files are not being kept. Add a Blob store in Vercel
+          under <strong>Storage</strong> and every upload from then on keeps its original.
+        </p>
+      )}
+
       {creating ? (
         <Card>
           <form action={create} className="flex flex-col gap-3">
@@ -99,9 +117,9 @@ export function DocumentList({ clientId, documents }: { clientId: string; docume
           </form>
         </Card>
       ) : (
-        <button onClick={() => setCreating(true)} className="btn btn-primary self-start">
+        <button onClick={() => setCreating(true)} className="btn self-start">
           <Plus size={15} />
-          New document
+          Or write one by hand
         </button>
       )}
 
@@ -109,7 +127,7 @@ export function DocumentList({ clientId, documents }: { clientId: string; docume
         <Card>
           <Empty
             title="No documents yet"
-            hint="Briefs, brand guidelines, the strategy you agreed, how they like things done. Kept whole and readable — and the brain can read them too."
+            hint="Drop in briefs, brand guidelines, decks exported to PDF, the strategy you agreed. Kept whole and readable — and the brain can read them too."
           />
         </Card>
       )}
@@ -139,7 +157,11 @@ export function DocumentList({ clientId, documents }: { clientId: string; docume
             ) : (
               <>
                 <div className="flex flex-wrap items-center gap-2">
-                  <FileText size={14} className="shrink-0 text-[var(--ink-muted)]" />
+                  {doc.fileType?.startsWith("image/") ? (
+                    <ImageIcon size={14} className="shrink-0 text-[var(--ink-muted)]" />
+                  ) : (
+                    <FileText size={14} className="shrink-0 text-[var(--ink-muted)]" />
+                  )}
                   <button
                     onClick={() => setOpenId(isOpen ? null : doc.id)}
                     className="text-left text-[14px] font-semibold tracking-[-0.01em] hover:underline"
@@ -150,6 +172,18 @@ export function DocumentList({ clientId, documents }: { clientId: string; docume
                   {doc.pinned && <Chip tone="brand">pinned</Chip>}
 
                   <div className="ml-auto flex items-center gap-0.5">
+                    {doc.fileUrl && (
+                      <a
+                        href={doc.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-ghost btn-sm"
+                        title={`Open ${doc.fileName ?? "the original file"}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Download size={13} />
+                      </a>
+                    )}
                     <span className="mr-1 text-[11px] text-muted">
                       {doc.updatedAt.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                     </span>
@@ -176,6 +210,20 @@ export function DocumentList({ clientId, documents }: { clientId: string; docume
                     </button>
                   </div>
                 </div>
+
+                {doc.fileName && (
+                  <p className="mt-1 text-[11.5px] text-muted">
+                    {doc.fileName}
+                    {doc.fileSize ? ` · ${(doc.fileSize / 1024).toFixed(0)} KB` : ""}
+                    {doc.fileUrl ? "" : " · original not kept"}
+                  </p>
+                )}
+
+                {doc.extractionNote && (
+                  <p className="mt-1.5 text-[11.5px] leading-relaxed" style={{ color: "var(--color-warn)" }}>
+                    {doc.extractionNote}
+                  </p>
+                )}
 
                 {isOpen ? (
                   <div className="mt-3 border-t pt-3">
