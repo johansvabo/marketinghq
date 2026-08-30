@@ -1,7 +1,8 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, connections, stakeholders, syncRuns } from "@/lib/db/schema";
-import { env, isConfigured } from "@/lib/env";
+import { env } from "@/lib/env";
+import { systemHealth, type HealthState } from "@/lib/health";
 import { PROVIDERS, type ProviderId } from "@/lib/integrations/oauth";
 import { relativeDay } from "@/lib/dates";
 import { Card, CardTitle, Chip, ClientDot, Empty, PageHeader } from "@/components/ui";
@@ -10,40 +11,54 @@ import { ClientManager } from "@/components/client-manager";
 
 export const dynamic = "force-dynamic";
 
+const STATE_COLOR: Record<HealthState, string> = {
+  ok: "var(--color-good)",
+  warn: "var(--color-warn)",
+  error: "var(--color-urgent)",
+};
+
 export default async function SettingsPage() {
-  const [connectionRows, clientRows, stakeholderRows, recentSyncs] = await Promise.all([
+  const [connectionRows, clientRows, stakeholderRows, recentSyncs, health] = await Promise.all([
     db.select().from(connections),
     db.select().from(clients).orderBy(clients.name),
     db.select().from(stakeholders),
     db.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(12),
+    systemHealth(),
   ]);
+
+  const problems = health.filter((c) => c.state !== "ok");
 
   const byProvider = new Map(connectionRows.map((c) => [c.provider, c]));
 
-  const readiness = [
-    { label: "Database", ok: true, hint: env.tursoUrl ? "Turso (hosted)" : "local SQLite file" },
-    { label: "Claude", ok: isConfigured.anthropic(), hint: isConfigured.anthropic() ? env.anthropicModel : "set ANTHROPIC_API_KEY" },
-    { label: "Token encryption", ok: Boolean(env.encryptionKey), hint: env.encryptionKey ? "AES-256-GCM at rest" : "set ENCRYPTION_KEY before connecting accounts" },
-    { label: "Passcode lock", ok: Boolean(env.authSecret), hint: env.authSecret ? "on" : "set AUTH_SECRET before deploying" },
-    { label: "Scheduled runs", ok: Boolean(env.cronSecret), hint: env.cronSecret ? "CRON_SECRET set" : "set CRON_SECRET to enable the nightly job" },
-  ];
 
   return (
     <>
       <PageHeader title="Settings" subtitle="Connections, clients and the health of the machinery behind all of it" />
 
       <div className="mb-5 grid gap-3 md:grid-cols-2">
-        <Card>
-          <CardTitle>System</CardTitle>
+        <Card tone={problems.some((c) => c.state === "error") ? "urgent" : undefined}>
+          <CardTitle
+            action={
+              <span className="text-[11.5px]" style={{ color: problems.length ? "var(--color-warn)" : "var(--color-good)" }}>
+                {problems.length === 0 ? "all good" : `${problems.length} to look at`}
+              </span>
+            }
+          >
+            System
+          </CardTitle>
           <ul className="flex flex-col gap-2">
-            {readiness.map((item) => (
-              <li key={item.label} className="flex items-center gap-2.5">
-                <span
-                  className="h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ background: item.ok ? "var(--color-good)" : "var(--color-warn)" }}
-                />
-                <span className="text-[13px] font-medium">{item.label}</span>
-                <span className="ml-auto text-[11.5px] text-muted">{item.hint}</span>
+            {health.map((item) => (
+              <li key={item.label}>
+                <div className="flex items-center gap-2.5">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: STATE_COLOR[item.state] }} />
+                  <span className="text-[13px] font-medium">{item.label}</span>
+                  <span className="ml-auto truncate pl-2 text-[11.5px] text-muted">{item.hint}</span>
+                </div>
+                {item.fix && (
+                  <p className="mt-1 pl-4 text-[11.5px] leading-relaxed" style={{ color: STATE_COLOR[item.state] }}>
+                    {item.fix}
+                  </p>
+                )}
               </li>
             ))}
           </ul>
