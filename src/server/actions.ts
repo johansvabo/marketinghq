@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import {
   clients,
   connections,
+  documents,
   insights,
   milestones,
   projects,
@@ -544,4 +545,96 @@ export async function commitImportedInsights(
 
   refresh("/brain", "/insights");
   return { ok: true as const, count: rows.length };
+}
+
+/* --------------------------------------------------------------- documents */
+
+export async function createDocument(input: {
+  clientId?: string | null;
+  projectId?: string | null;
+  title: string;
+  body?: string;
+  kind?: string;
+  tags?: string[];
+}) {
+  if (!input.title?.trim()) return { ok: false as const, error: "A document needs a title." };
+
+  const [row] = await db
+    .insert(documents)
+    .values({
+      clientId: input.clientId || null,
+      projectId: input.projectId || null,
+      title: input.title.trim(),
+      body: input.body ?? "",
+      kind: input.kind ?? "note",
+      tags: input.tags ?? [],
+    })
+    .returning();
+
+  refresh("/clients", `/clients/${input.clientId ?? ""}`);
+  return { ok: true as const, id: row.id };
+}
+
+export async function updateDocument(
+  documentId: string,
+  patch: { title?: string; body?: string; kind?: string; tags?: string[]; projectId?: string | null },
+) {
+  const [row] = await db.select({ clientId: documents.clientId }).from(documents).where(eq(documents.id, documentId)).limit(1);
+
+  await db
+    .update(documents)
+    .set({
+      ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+      ...(patch.body !== undefined ? { body: patch.body } : {}),
+      ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
+      ...(patch.tags !== undefined ? { tags: patch.tags } : {}),
+      ...(patch.projectId !== undefined ? { projectId: patch.projectId } : {}),
+    })
+    .where(eq(documents.id, documentId));
+
+  refresh("/clients", `/clients/${row?.clientId ?? ""}`, `/documents/${documentId}`);
+  return { ok: true as const };
+}
+
+export async function toggleDocumentPin(documentId: string) {
+  const [row] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
+  if (!row) return { ok: false as const, error: "Not found." };
+  await db.update(documents).set({ pinned: !row.pinned }).where(eq(documents.id, documentId));
+  refresh("/clients", `/clients/${row.clientId ?? ""}`);
+  return { ok: true as const };
+}
+
+export async function deleteDocument(documentId: string) {
+  const [row] = await db.select({ clientId: documents.clientId }).from(documents).where(eq(documents.id, documentId)).limit(1);
+  await db.delete(documents).where(eq(documents.id, documentId));
+  refresh("/clients", `/clients/${row?.clientId ?? ""}`);
+  return { ok: true as const };
+}
+
+export async function updateClient(
+  clientId: string,
+  patch: { name?: string; engagement?: string; status?: string; notes?: string; emailDomains?: string; monthlyValue?: number | null; color?: string },
+) {
+  await db
+    .update(clients)
+    .set({
+      ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+      ...(patch.engagement !== undefined ? { engagement: patch.engagement } : {}),
+      ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.notes !== undefined ? { notes: patch.notes.trim() || null } : {}),
+      ...(patch.color !== undefined ? { color: patch.color } : {}),
+      ...(patch.monthlyValue !== undefined ? { monthlyValue: patch.monthlyValue } : {}),
+      ...(patch.emailDomains !== undefined
+        ? {
+            emailDomains: patch.emailDomains
+              .split(",")
+              .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+              .filter(Boolean),
+          }
+        : {}),
+    })
+    .where(eq(clients.id, clientId));
+
+  refresh("/clients", `/clients/${clientId}`, "/settings");
+  return { ok: true as const };
 }

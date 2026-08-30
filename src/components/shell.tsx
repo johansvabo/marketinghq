@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   BrainCircuit,
   CalendarClock,
+  Building2,
   CheckSquare,
   FolderKanban,
   Lightbulb,
@@ -20,6 +21,7 @@ type NavItem = { href: string; label: string; icon: typeof Sunrise; exact?: bool
 
 const NAV: NavItem[] = [
   { href: "/", label: "Today", icon: Sunrise, exact: true },
+  { href: "/clients", label: "Clients", icon: Building2 },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/brain", label: "Brain", icon: BrainCircuit },
@@ -28,7 +30,8 @@ const NAV: NavItem[] = [
 ];
 
 /** The five that fit a thumb. Settings lives behind the header on mobile. */
-const MOBILE_NAV = NAV.filter((item) => item.label !== "Insights");
+/** The five that fit a thumb; the rest live behind the header on mobile. */
+const MOBILE_NAV = NAV.filter((item) => item.label !== "Insights" && item.label !== "Projects");
 
 function isActive(pathname: string, href: string, exact?: boolean) {
   return exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import {
   calendarEvents,
   clients,
+  documents,
   insights,
   projects,
   reportRuns,
@@ -22,7 +23,7 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
   {
     name: "search_brain",
     description:
-      "Search captured insights, learnings, meeting notes and decisions. Use this first for any question about what was learned, decided, tried or observed. Matches on title and body text.",
+      "Search everything written down: captured insights, learnings, decisions and meeting notes, plus client documents — briefs, strategy, brand guidelines, ways of working. Use this first for any question about what was learned, decided, agreed or written. Matches on title and body text.",
     input_schema: {
       type: "object",
       properties: {
@@ -31,6 +32,11 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
         kind: {
           type: "string",
           enum: ["insight", "learning", "benchmark", "idea", "meeting_note", "decision", "reference"],
+        },
+        include: {
+          type: "string",
+          enum: ["all", "insights", "documents"],
+          description: "Default all. Documents are reference material read whole; insights are individual findings.",
         },
         limit: { type: "number", description: "Default 12, max 40." },
       },
@@ -210,11 +216,33 @@ async function searchBrain(input: any): Promise<ToolResult> {
     .orderBy(desc(insights.pinned), desc(insights.occurredAt))
     .limit(limit);
 
-  if (rows.length === 0) {
-    return { text: `No entries found${input.query ? ` for "${input.query}"` : ""}. The brain may simply not have this yet — say so rather than guessing.` };
+  // Documents are reference material and usually the better answer to "what did
+  // we agree", so they are searched alongside insights unless excluded.
+  const include = input.include ?? "all";
+  let docRows: { doc: typeof documents.$inferSelect; clientName: string | null }[] = [];
+
+  if (include !== "insights") {
+    const docWhere = [];
+    if (input.query) {
+      const q = `%${String(input.query).toLowerCase()}%`;
+      docWhere.push(or(like(sql`lower(${documents.title})`, q), like(sql`lower(${documents.body})`, q)));
+    }
+    if (client) docWhere.push(eq(documents.clientId, client.id));
+
+    docRows = await db
+      .select({ doc: documents, clientName: clients.name })
+      .from(documents)
+      .leftJoin(clients, eq(documents.clientId, clients.id))
+      .where(docWhere.length ? and(...docWhere) : undefined)
+      .orderBy(desc(documents.pinned), desc(documents.updatedAt))
+      .limit(limit);
   }
 
-  const text = rows
+  if (rows.length === 0 && docRows.length === 0) {
+    return { text: `Nothing found${input.query ? ` for "${input.query}"` : ""}. The brain may simply not have this yet — say so rather than guessing.` };
+  }
+
+  const insightText = rows
     .map(
       ({ insight, clientName }) =>
         `[${insight.kind}] ${insight.title}\n  ${clientName ? `client: ${clientName} · ` : ""}${iso(insight.occurredAt)} · confidence ${insight.confidence}/5${
@@ -223,7 +251,21 @@ async function searchBrain(input: any): Promise<ToolResult> {
     )
     .join("\n\n");
 
-  return { text: `${rows.length} entries:\n\n${text}`, data: rows.map((r) => r.insight.id) };
+  // Documents get a bigger slice each: they are written to be read as a whole,
+  // and truncating a brief to two lines makes it useless.
+  const docText = docRows
+    .map(
+      ({ doc, clientName }) =>
+        `[document · ${doc.kind}] ${doc.title}\n  ${clientName ? `client: ${clientName} · ` : ""}updated ${iso(doc.updatedAt)}\n  ${doc.body.replace(/\s+/g, " ").slice(0, 2000)}`,
+    )
+    .join("\n\n");
+
+  const parts = [
+    docRows.length ? `${docRows.length} document${docRows.length === 1 ? "" : "s"}:\n\n${docText}` : "",
+    rows.length ? `${rows.length} captured entr${rows.length === 1 ? "y" : "ies"}:\n\n${insightText}` : "",
+  ].filter(Boolean);
+
+  return { text: parts.join("\n\n---\n\n") };
 }
 
 async function listWork(input: any): Promise<ToolResult> {
@@ -377,7 +419,7 @@ async function getClientBrief(input: any): Promise<ToolResult> {
   const client = await resolveClient(input.client);
   if (!client) return { text: `No client matching "${input.client}". Say so rather than guessing which client was meant.` };
 
-  const [projectRows, taskRows, people, recentInsights, metricRows] = await Promise.all([
+  const [projectRows, taskRows, people, recentInsights, metricRows, docRows] = await Promise.all([
     db.select().from(projects).where(eq(projects.clientId, client.id)).orderBy(desc(projects.updatedAt)).limit(20),
     db
       .select()
@@ -388,6 +430,7 @@ async function getClientBrief(input: any): Promise<ToolResult> {
     db.select().from(stakeholders).where(eq(stakeholders.clientId, client.id)),
     db.select().from(insights).where(eq(insights.clientId, client.id)).orderBy(desc(insights.occurredAt)).limit(10),
     compare({ clientId: client.id, days: 28 }),
+    db.select().from(documents).where(eq(documents.clientId, client.id)).orderBy(desc(documents.pinned), desc(documents.updatedAt)).limit(12),
   ]);
 
   const sections = [
@@ -411,6 +454,11 @@ async function getClientBrief(input: any): Promise<ToolResult> {
     people.length
       ? people.map((s) => `- ${s.name}${s.role ? `, ${s.role}` : ""}${s.email ? ` <${s.email}>` : ""}${s.lastContactAt ? ` — last contact ${relativeDay(s.lastContactAt)}` : ""}`).join("\n")
       : "None recorded.",
+    ``,
+    `## Documents (${docRows.length})`,
+    docRows.length
+      ? docRows.map((d) => `- [${d.kind}] ${d.title}${d.pinned ? " (pinned)" : ""}\n    ${d.body.replace(/\s+/g, " ").slice(0, 700)}`).join("\n")
+      : "None yet.",
     ``,
     `## Recent captures`,
     recentInsights.length

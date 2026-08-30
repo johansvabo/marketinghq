@@ -215,6 +215,32 @@ export const insights = sqliteTable(
   (t) => [index("insights_client").on(t.clientId), index("insights_kind").on(t.kind)],
 );
 
+/**
+ * Reference material kept whole: briefs, brand guidelines, strategy docs, how a
+ * client likes things done. Distinct from insights on purpose — an insight is
+ * one finding you want surfaced and searched, a document is a thing you read.
+ * Splitting a brand guideline into "insights" would destroy it.
+ */
+export const documents = sqliteTable(
+  "documents",
+  {
+    id: id(),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    // brief | strategy | brand | process | research | reference | note
+    kind: text("kind").notNull().default("note"),
+    tags: text("tags", { mode: "json" }).$type<string[]>().default([]),
+    pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+    // manual | import
+    source: text("source").notNull().default("manual"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("documents_client").on(t.clientId), index("documents_kind").on(t.kind)],
+);
+
 /* ------------------------------------------------------------- marketing data */
 
 /**
@@ -469,3 +495,4 @@ export type ReportRun = typeof reportRuns.$inferSelect;
 export type Stakeholder = typeof stakeholders.$inferSelect;
 export type Connection = typeof connections.$inferSelect;
 export type Metric = typeof metrics.$inferSelect;
+export type Document = typeof documents.$inferSelect;
