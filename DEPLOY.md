@@ -133,8 +133,14 @@ file** needs somewhere to put it:
 2. Create a **Blob** store and connect it to this project
 3. Redeploy
 
-Vercel sets `BLOB_READ_WRITE_TOKEN` for you. Without it uploads still work and
-their text is stored — the file itself just is not kept, and Settings says so.
+Vercel sets `BLOB_READ_WRITE_TOKEN` for you.
+
+**This also decides how big an upload can be.** With a blob store, files go
+straight from your browser to storage and can be up to 100 MB. Without one they
+travel through the server, which the platform caps at a few megabytes — enough
+for a brief, not for a brand book. Uploads still work either way, and their text
+is still stored and searchable; the original just is not kept, and Settings says
+so.
 
 ---
 

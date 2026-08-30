@@ -4,7 +4,14 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileUp, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
-import { UPLOAD_ACCEPT } from "@/lib/documents/extract";
+import { upload } from "@vercel/blob/client";
+import {
+  formatBytes,
+  MAX_DIRECT_POST_BYTES,
+  MAX_UPLOAD_BYTES,
+  MULTIPART_THRESHOLD_BYTES,
+  UPLOAD_ACCEPT,
+} from "@/lib/documents/extract";
 
 type Result = {
   created: { title: string; hasText: boolean; stored: boolean }[];
@@ -16,39 +23,93 @@ type Result = {
  * Drag a file anywhere on the drop zone, or click to pick. Multiple at once is
  * the normal case — a client handover is rarely one file.
  */
-export function DocumentUpload({ clientId }: { clientId: string }) {
+export function DocumentUpload({ clientId, storageOn }: { clientId: string; storageOn: boolean }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ name: string; index: number; total: number } | null>(null);
 
-  async function upload(files: FileList | File[]) {
+  /**
+   * With blob storage on, each file goes straight from the browser to storage,
+   * so the serverless request-body cap never applies and large files work. The
+   * server then reads it back to pull the text out.
+   *
+   * Without it, files travel through the server and are limited to what the
+   * platform will carry.
+   */
+  async function sendDirect(list: File[]): Promise<Result> {
+    const created: Result["created"] = [];
+    const failed: Result["failed"] = [];
+
+    for (const [index, file] of list.entries()) {
+      setProgress({ name: file.name, index: index + 1, total: list.length });
+      try {
+        if (file.size > MAX_UPLOAD_BYTES) {
+          throw new Error(`is ${formatBytes(file.size)}, over the ${formatBytes(MAX_UPLOAD_BYTES)} limit.`);
+        }
+
+        const blob = await upload(file.name, file, {
+          access: "public",
+          handleUploadUrl: "/api/documents/blob-token",
+          multipart: file.size > MULTIPART_THRESHOLD_BYTES,
+          contentType: file.type || undefined,
+        });
+
+        const response = await fetch("/api/documents/from-blob", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            url: blob.url,
+            pathname: blob.pathname,
+            fileName: file.name,
+            fileType: file.type,
+            fileSize: file.size,
+            clientId,
+          }),
+        });
+
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error ?? "could not be recorded.");
+        created.push(payload);
+      } catch (caught) {
+        failed.push({ name: file.name, reason: caught instanceof Error ? caught.message : "could not be uploaded." });
+      }
+    }
+
+    return { created, failed, storageConfigured: true };
+  }
+
+  async function sendThroughServer(list: File[]): Promise<Result> {
+    const body = new FormData();
+    body.set("clientId", clientId);
+    for (const file of list) body.append("files", file);
+
+    const response = await fetch("/api/documents/upload", { method: "POST", body });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error ?? "The upload failed.");
+    return payload;
+  }
+
+  async function handleFiles(files: FileList | File[]) {
     const list = Array.from(files);
     if (list.length === 0) return;
 
     setBusy(true);
     setError(null);
     setResult(null);
-
-    const body = new FormData();
-    body.set("clientId", clientId);
-    for (const file of list) body.append("files", file);
+    setProgress(null);
 
     try {
-      const response = await fetch("/api/documents/upload", { method: "POST", body });
-      const payload = await response.json();
-      if (!response.ok) {
-        setError(payload.error ?? "The upload failed.");
-      } else {
-        setResult(payload);
-        router.refresh();
-      }
-    } catch {
-      setError("The upload failed — check your connection and try again.");
+      setResult(storageOn ? await sendDirect(list) : await sendThroughServer(list));
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The upload failed — check your connection and try again.");
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -63,7 +124,7 @@ export function DocumentUpload({ clientId }: { clientId: string }) {
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          void upload(e.dataTransfer.files);
+          void handleFiles(e.dataTransfer.files);
         }}
         onClick={() => inputRef.current?.click()}
         role="button"
@@ -84,7 +145,7 @@ export function DocumentUpload({ clientId }: { clientId: string }) {
           accept={UPLOAD_ACCEPT}
           className="hidden"
           onChange={(e) => {
-            if (e.target.files) void upload(e.target.files);
+            if (e.target.files) void handleFiles(e.target.files);
             e.target.value = "";
           }}
         />
@@ -92,15 +153,24 @@ export function DocumentUpload({ clientId }: { clientId: string }) {
         {busy ? (
           <>
             <Loader2 size={18} className="animate-spin" style={{ color: "var(--color-brand)" }} />
-            <p className="text-[13px] font-medium">Reading your files…</p>
-            <p className="text-[11.5px] text-muted">Pulling the text out so it becomes searchable.</p>
+            <p className="text-[13px] font-medium">
+              {progress ? `Uploading ${progress.name}` : "Reading your files…"}
+            </p>
+            <p className="text-[11.5px] text-muted">
+              {progress && progress.total > 1
+                ? `${progress.index} of ${progress.total} · pulling the text out so it becomes searchable`
+                : "Pulling the text out so it becomes searchable."}
+            </p>
           </>
         ) : (
           <>
             <FileUp size={18} style={{ color: dragging ? "var(--color-brand)" : "var(--ink-muted)" }} />
             <p className="text-[13px] font-medium">Drop files here, or click to choose</p>
             <p className="text-[11.5px] leading-relaxed text-muted">
-              PDF, Word, text, markdown, CSV and images. The text is pulled out and made searchable; the original is kept.
+              PDF, Word, text, markdown, CSV and images. The text is pulled out and made searchable.
+              {storageOn
+                ? ` Up to ${formatBytes(MAX_UPLOAD_BYTES)} each, original kept.`
+                : ` Up to ${formatBytes(MAX_DIRECT_POST_BYTES)} each until file storage is set up.`}
             </p>
           </>
         )}

@@ -22,8 +22,27 @@ const IMAGE = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".heic"];
 
 export const UPLOAD_ACCEPT = [...PLAIN, ".pdf", ".docx", ".rtf", ".html", ...IMAGE].join(",");
 
-/** 25 MB — comfortably more than a brand book, far less than a video. */
-export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+/**
+ * Two different ceilings, and it matters which one applies.
+ *
+ * Uploading straight to blob storage from the browser bypasses the serverless
+ * function, so the only limit is what we choose: 100 MB, comfortably more than
+ * any brand book.
+ *
+ * Without blob storage the file has to travel through a serverless function,
+ * whose request body the platform caps at a few megabytes — going over fails at
+ * the platform with an opaque error before any of this code runs. So that path
+ * gets a deliberately conservative cap it can actually enforce, with a message
+ * that explains itself.
+ */
+export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+export const MAX_DIRECT_POST_BYTES = 4 * 1024 * 1024;
+
+/** Above this, upload in parallel parts so a big file survives a wobbly line. */
+export const MULTIPART_THRESHOLD_BYTES = 8 * 1024 * 1024;
+
+export const formatBytes = (bytes: number) =>
+  bytes >= 1024 * 1024 ? `${Math.round(bytes / (1024 * 1024))} MB` : `${Math.round(bytes / 1024)} KB`;
 
 const ends = (name: string, list: string[]) => list.some((ext) => name.endsWith(ext));
 
@@ -31,7 +50,7 @@ export async function extractFromFile(file: File): Promise<Extraction> {
   const name = file.name.toLowerCase();
 
   if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error(`${file.name} is over 25 MB. Split it, or upload the part that matters.`);
+    throw new Error(`${file.name} is over ${formatBytes(MAX_UPLOAD_BYTES)}. Split it, or upload the part that matters.`);
   }
 
   if (name.endsWith(".pdf")) {

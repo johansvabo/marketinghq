@@ -83,7 +83,7 @@ export function DocumentList({
 
   return (
     <div className="flex flex-col gap-2.5">
-      <DocumentUpload clientId={clientId} />
+      <DocumentUpload clientId={clientId} storageOn={storageOn} />
 
       {!storageOn && documents.some((d) => d.fileName && !d.fileUrl) && (
         <p className="text-[11.5px] leading-relaxed text-muted">
