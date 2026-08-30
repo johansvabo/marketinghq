@@ -11,13 +11,16 @@ import { SignalCard } from "@/components/signals";
 import { TaskList } from "@/components/tasks";
 import { QuickAdd, QuickAddHint } from "@/components/quick-add";
 import { RunEngineButton } from "@/components/run-engine";
+import { GettingStarted } from "@/components/getting-started";
+import { onboardingSteps } from "@/lib/onboarding";
 
 export const dynamic = "force-dynamic";
 
 export default async function TodayPage() {
-  const [picture, brief, clientOptions, projectOptions] = await Promise.all([
+  const [picture, brief, onboarding, clientOptions, projectOptions] = await Promise.all([
     getDayPicture(),
     getOrCreateBrief(),
+    onboardingSteps(),
     db.select({ id: clients.id, name: clients.name, color: clients.color }).from(clients).where(eq(clients.status, "active")),
     db.select({ id: projects.id, name: projects.name }).from(projects).where(eq(projects.status, "active")),
   ]);
@@ -41,6 +44,8 @@ export default async function TodayPage() {
         </div>
         <RunEngineButton />
       </header>
+
+      {!onboarding.complete && <GettingStarted steps={onboarding.steps} />}
 
       <div className="mb-5">
         <StatStrip
