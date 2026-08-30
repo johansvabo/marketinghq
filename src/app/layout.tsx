@@ -4,6 +4,8 @@ import { AppShell } from "@/components/shell";
 import { LoginScreen } from "@/components/login";
 import { RegisterServiceWorker } from "@/components/register-sw";
 import { isSignedIn } from "@/lib/auth";
+import { env } from "@/lib/env";
+import { looksLikeAPastedBlock } from "@/lib/config-warnings";
 import { countOpenSignals } from "@/lib/proactive/engine";
 
 export const metadata: Metadata = {
@@ -37,7 +39,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body>
         <RegisterServiceWorker />
-        {signedIn ? <AppShell signalCount={counts.urgent + counts.important}>{children}</AppShell> : <LoginScreen />}
+        {signedIn ? (
+          <AppShell signalCount={counts.urgent + counts.important}>{children}</AppShell>
+        ) : (
+          <LoginScreen configWarning={looksLikeAPastedBlock(env.authSecret)} />
+        )}
       </body>
     </html>
   );

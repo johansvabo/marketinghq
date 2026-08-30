@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Lock } from "lucide-react";
 
-export function LoginScreen() {
+export function LoginScreen({ configWarning }: { configWarning?: string | null }) {
   const router = useRouter();
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +45,24 @@ export function LoginScreen() {
             <p className="text-[12px] text-muted">Private workspace</p>
           </div>
         </div>
+
+        {configWarning && (
+          <div
+            className="mb-4 rounded-[10px] p-3"
+            style={{
+              background: "color-mix(in oklch, var(--color-urgent) 12%, var(--surface))",
+              border: "1px solid color-mix(in oklch, var(--color-urgent) 30%, transparent)",
+            }}
+          >
+            <p className="text-[12.5px] font-semibold" style={{ color: "var(--color-urgent)" }}>
+              No passcode will work
+            </p>
+            <p className="mt-1 text-[11.5px] leading-relaxed text-soft">
+              AUTH_SECRET {configWarning} Fix it where you set your environment variables, redeploy, and this notice
+              will disappear.
+            </p>
+          </div>
+        )}
 
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div>
