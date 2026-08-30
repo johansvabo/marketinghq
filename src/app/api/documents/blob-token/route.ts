@@ -1,6 +1,7 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { isSignedIn } from "@/lib/auth";
 import { MAX_UPLOAD_BYTES, UPLOAD_ACCEPT } from "@/lib/documents/extract";
+import { blobToken, storageConfigured } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -15,12 +16,20 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   if (!(await isSignedIn())) return new Response("Unauthorized", { status: 401 });
 
+  if (!storageConfigured()) {
+    return Response.json(
+      { error: "No file storage is configured. Add a Blob store in Vercel under Storage, then redeploy." },
+      { status: 400 },
+    );
+  }
+
   const body = (await request.json()) as HandleUploadBody;
 
   try {
     const result = await handleUpload({
       body,
       request,
+      token: blobToken(),
       onBeforeGenerateToken: async () => ({
         allowedContentTypes: undefined,
         addRandomSuffix: true,
