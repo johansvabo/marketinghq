@@ -177,11 +177,11 @@ changes and you want to see them:
 
 ```
 npm install
-npm run db:push
+npm run db:migrate
 npm run dev
 ```
 
-`npm install` is quick when nothing has changed. `npm run db:push` updates the
+`npm install` is quick when nothing has changed. `npm run db:migrate` updates the
 database structure without touching what's in it.
 
 > **Use `db:push`, not `setup`, once you have real data in there.**
@@ -242,5 +242,6 @@ Running locally is for deciding whether this is worth having. It only works when
 your Mac is on, and only on your Mac.
 
 When you want it properly — on your phone, running its nightly job, there when you
-open your laptop somewhere else — that's **SETUP.md**. It's more involved, and
-worth doing only once you know you want it.
+open your laptop somewhere else — that's **DEPLOY.md**. It is all done in the
+browser, takes about half an hour once, and after that every change appears by
+itself. You would not need this guide, or the terminal, again.

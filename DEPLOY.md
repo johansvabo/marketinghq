@@ -1,0 +1,165 @@
+# Going live
+
+Turning Marketing HQ into a real service: your own URL, on your phone, running
+its nightly job, and updating itself whenever a change is pushed.
+
+**This is a browser job.** No terminal. The app builds its own database schema on
+first boot, so there is nothing to run by hand — not now, and not when the schema
+changes later.
+
+About 30 minutes, once. Three accounts: Turso (database), Vercel (hosting),
+Anthropic (the brain).
+
+---
+
+## Step 1 — The database (Turso, ~5 min)
+
+Vercel wipes its filesystem between requests, so the database has to live
+somewhere else. Turso is SQLite hosted — the same engine the app already uses —
+and the free tier is far bigger than this will ever need.
+
+1. Go to **[turso.tech](https://turso.tech)** → sign up (GitHub login is fine)
+2. Create a database. Name it `marketinghq`. Take the region nearest you.
+3. On the database page, find and copy two things — paste them somewhere
+   temporary, you'll need them in Step 3:
+   - the **database URL** (starts `libsql://`)
+   - a **token**, from the button for creating one (Turso calls it an auth
+     token). Give it read & write.
+
+That is the entire database setup. You will never run a migration by hand — the
+app applies its own on boot.
+
+---
+
+## Step 2 — The brain's API key (~2 min)
+
+1. Go to **[console.anthropic.com](https://console.anthropic.com)** → sign up
+2. Add a little credit (there is no free tier; $5 goes a long way here)
+3. **API keys** → create one → copy it (starts `sk-ant-`)
+
+Skippable. Without it everything works except the chat, the report drafter, the
+written daily brief, and import — those fall back or switch off cleanly.
+
+---
+
+## Step 3 — Deploy (Vercel, ~10 min)
+
+1. Go to **[vercel.com](https://vercel.com)** → sign up **with GitHub**
+2. **Add New… → Project**
+3. Find **`marketinghq`** in the list → **Import**
+   - If it isn't listed, click *Adjust GitHub App Permissions* and give Vercel
+     access to that repository
+4. Leave every build setting alone — Vercel detects Next.js correctly
+5. Open **Environment Variables** and add these. Copy the values from the message
+   where I generated them for you:
+
+   | Name | Value |
+   |---|---|
+   | `TURSO_DATABASE_URL` | the `libsql://…` URL from Step 1 |
+   | `TURSO_AUTH_TOKEN` | the token from Step 1 |
+   | `AUTH_SECRET` | your generated passcode — this is what you log in with |
+   | `ENCRYPTION_KEY` | your generated key |
+   | `CRON_SECRET` | your generated secret |
+   | `MCP_TOKEN` | your generated token |
+   | `ANTHROPIC_API_KEY` | from Step 2 (skip if you skipped it) |
+   | `OWNER_EMAIL` | your email address |
+   | `APP_URL` | leave this out for now — Step 4 |
+
+6. **Deploy**, and wait a couple of minutes
+
+You'll get a URL like `marketinghq-abc123.vercel.app`. Open it. You should be
+asked for a passcode — that's `AUTH_SECRET`. Sign in and you'll find it empty and
+waiting, with its schema already built.
+
+> **Nothing loads, or you see an error page?** In Vercel: your project →
+> **Logs**. A line beginning `[marketinghq]` names the problem, and it is almost
+> always a mistyped Turso URL or token. Fix the variable, then **Redeploy**.
+
+---
+
+## Step 4 — Lock in the address
+
+Some things (signing in with Google, the OAuth connections) need the app to know
+its own address.
+
+1. In Vercel: **Settings → Environment Variables**
+2. Add `APP_URL` = your full URL **with `https://` and no trailing slash**,
+   e.g. `https://marketinghq-abc123.vercel.app`
+3. **Deployments** → the latest one → **⋯ → Redeploy**
+
+**A custom domain is worth it** if you have a spare one — `hq.yourdomain.com`
+reads better and, more usefully, never changes. Every OAuth connection you set up
+is tied to this address, so changing it later means re-registering all of them.
+Vercel → **Settings → Domains**. Do it now if you're going to do it at all, then
+set `APP_URL` to the custom domain instead.
+
+---
+
+## Step 5 — Put it on your phone
+
+Open the URL in Safari on your iPhone → **Share** → **Add to Home Screen**.
+
+It launches without browser chrome, keeps you signed in for 30 days, and uses the
+bottom tab bar. On Android, Chrome offers to install it.
+
+---
+
+## Step 6 — Make it yours
+
+In the app:
+
+1. **Settings → Clients.** Add your real clients. Fill in **email domains** — it
+   is what files mail and meetings automatically — and add **stakeholders** with a
+   contact cadence. The cadence is the field everyone skips and then regrets; it
+   is what powers "Anna hasn't heard from you in 19 days".
+2. **Reports → New cadence**, one per client. Fill in the *template* field
+   properly — it is handed to the drafter, so "lead with cost per opportunity,
+   not cost per lead" genuinely changes what gets written.
+3. **Brain → Import.** Point it at what you already have. Do it per client — the
+   review step is where the quality comes from, and it's easier to judge when
+   everything on screen is about one account.
+4. **Settings → Connections**, when you're ready. Each one is independent; see
+   SETUP.md for the credentials. The nightly job is already scheduled and starts
+   working the moment anything is connected.
+
+---
+
+## How updates work from here
+
+This is the part that makes it a service rather than a project.
+
+Vercel is watching the GitHub repository. **When a change is pushed, Vercel
+rebuilds and deploys it automatically** — usually within two minutes. You refresh
+the page.
+
+So when you ask me for a new feature: I push, it appears. No downloading, no
+terminal, no migration step even when the database structure changes. Your data
+stays where it is.
+
+If you ever want to see a change before it goes live, Vercel builds a separate
+preview URL for every branch — ask me to put the work on a branch instead.
+
+---
+
+## What it costs
+
+| | |
+|---|---|
+| Vercel | free (Hobby) |
+| Turso | free tier, far beyond what this needs |
+| Anthropic | usage-based — a brief is a fraction of a cent, a report draft a few cents |
+
+A few dollars a month unless you talk to the brain constantly.
+
+---
+
+## Keeping it safe
+
+- **`AUTH_SECRET` is the only thing between the internet and your client data.**
+  Treat it like a password — it belongs in a password manager, not a note.
+- **`ENCRYPTION_KEY` must not change** once accounts are connected: the stored
+  tokens are encrypted with it, and rotating it means reconnecting everything.
+- Back up before anything major: Turso's dashboard does this, or ask me.
+- The repository is currently **public**. That exposes the code, never your data
+  or your keys — but it costs nothing to switch it to private in GitHub →
+  Settings → General → Danger Zone.

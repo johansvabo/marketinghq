@@ -10,8 +10,10 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "seed": "tsx scripts/seed.ts",
-    "setup": "npm run db:push && npm run seed",
-    "test:import": "tsx scripts/test-import.mts"
+    "setup": "npm run db:migrate && npm run seed",
+    "test:import": "tsx scripts/test-import.mts",
+    "db:migrate": "drizzle-kit migrate",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

@@ -77,13 +77,17 @@ on iOS and it behaves like a native app, with a thumb-reachable tab bar.
 
 ```bash
 npm install            # fetch the libraries — a few minutes the first time
-npm run setup          # create the database and fill it with demo data
+npm run setup          # build the database and fill it with demo data
 npm run dev            # http://localhost:3000
 ```
 
-`npm run setup` is `db:push` (create the database) plus `seed` (demo data) —
-run them separately if you want the database empty. `npm run test:import`
-checks the file readers and chunker.
+`npm run setup` is `db:migrate` (build the schema) plus `seed` (demo data) — run
+`npm run db:migrate` alone if you want it empty. `npm run test:import` checks the
+file readers and chunker.
+
+**The app migrates itself on boot**, so a deployment never needs a schema step by
+hand. After changing `src/lib/db/schema.ts`, run `npm run db:generate` to write a
+migration and commit it — every environment picks it up on its next start.
 
 **Never used a terminal before?** START-HERE.md walks through it from scratch.
 
@@ -102,18 +106,16 @@ written daily brief. Everything else works without it.
 
 ## Making it real
 
-See **[SETUP.md](./SETUP.md)** for the full walkthrough: deploying to Vercel with
-a Turso database, getting credentials for each of the four data platforms,
-scheduling the nightly run, and connecting Claude Desktop to your brain over MCP.
+**[DEPLOY.md](./DEPLOY.md)** takes you live in about half an hour, entirely in the
+browser — Turso for the database, Vercel for hosting, then your own URL on your
+phone. Pushes deploy themselves from there.
 
-The short version:
+**[SETUP.md](./SETUP.md)** covers the platform credentials — Gmail, Calendar, GA4,
+Google Ads, Outlook, Meta, LinkedIn — and connecting Claude Desktop to your brain
+over MCP.
 
-1. `vercel deploy`, set `AUTH_SECRET`, `ENCRYPTION_KEY`, `APP_URL`, `CRON_SECRET`
-2. Point `TURSO_DATABASE_URL` at a hosted database
-3. Add `ANTHROPIC_API_KEY`
-4. Connect Google, Microsoft, Meta and LinkedIn from **Settings**, then map each
-   GA4 property and ad account to a client in the same place
-5. Open it on your phone and Add to Home Screen
+**[START-HERE.md](./START-HERE.md)** is the from-scratch guide for running it on a
+Mac with no terminal experience.
 
 Running cost is roughly: Vercel Hobby free, Turso free tier, Anthropic usage —
 call it a few dollars a month unless you talk to the brain constantly.

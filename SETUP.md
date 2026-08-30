@@ -1,7 +1,8 @@
-# Setting up Marketing HQ for real
+# Connecting your platforms
 
-Local dev needs nothing. This document is about turning it into a private
-service you rely on daily, on your Mac and your phone.
+> **Deploying?** Start with **[DEPLOY.md](./DEPLOY.md)** — it gets you live in the
+> browser in about half an hour. This document is about connecting the data
+> platforms afterwards, and the credentials each one needs.
 
 Work through it in order. Steps 1–3 take about twenty minutes; the platform
 connections in step 4 are independent of each other, so do them as you need
