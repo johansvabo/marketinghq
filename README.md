@@ -71,6 +71,15 @@ you do, and the four who reason about the outside world can search the web, so
 they answer from current sources rather than stale memory. They can save what
 they produce straight into a client's documents.
 
+They also work **unprompted**: twice a week each specialist studies each active
+client and produces something usable — three LinkedIn posts written out in full,
+an article draft, a competitor report with sources and dates, the procurement
+rounds closing soon. Ragnhild runs last and reviews what the others produced.
+Work is planned first and produced under a time budget, so a cycle spanning
+dozens of model sessions drains across several passes instead of failing in one.
+"Nothing to report" is an allowed answer, and saying so honestly is what keeps
+the feed worth opening.
+
 **Insights** — GA4, Meta, LinkedIn and Google Ads in one view, per client, with
 period-over-period movement and the anomalies the engine flagged.
 

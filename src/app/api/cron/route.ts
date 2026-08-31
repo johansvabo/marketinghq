@@ -5,6 +5,7 @@ import { syncAll } from "@/lib/integrations/sync";
 import { materializeReportRuns } from "@/lib/reporting/schedule";
 import { runProactiveEngine } from "@/lib/proactive/engine";
 import { getOrCreateBrief } from "@/lib/brief";
+import { planCycle, processPending } from "@/lib/ai/briefings";
 
 export const runtime = "nodejs";
 export const maxDuration = 250;
@@ -54,6 +55,22 @@ export async function GET(request: Request) {
     steps.brief = brief.source;
   } catch (error) {
     steps.brief = { error: error instanceof Error ? error.message : String(error) };
+  }
+
+  // The team's scheduled work: plan whatever has come round, then produce as
+  // much as fits in what is left of this invocation. Anything remaining is
+  // picked up by the next one, so a big cycle never has to fit in a single run.
+  try {
+    steps.briefingsPlanned = await planCycle();
+  } catch (error) {
+    steps.briefingsPlanned = { error: error instanceof Error ? error.message : String(error) };
+  }
+
+  try {
+    const remainingBudget = Math.max(20_000, 200_000 - (Date.now() - startedAt));
+    steps.briefings = await processPending(remainingBudget);
+  } catch (error) {
+    steps.briefings = { error: error instanceof Error ? error.message : String(error) };
   }
 
   const durationMs = Date.now() - startedAt;

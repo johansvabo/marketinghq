@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  briefings,
   clients,
   connections,
   documents,
@@ -25,6 +26,8 @@ import { describeAiError } from "@/lib/ai/client";
 import { INSIGHT_KINDS } from "@/lib/ai/import";
 import { syncAll } from "@/lib/integrations/sync";
 import { removeFile } from "@/lib/storage";
+import { AGENTS, type AgentKey } from "@/lib/ai/agents";
+import { planCycle as planCycleNow, processPending, saveBriefingConfig } from "@/lib/ai/briefings";
 
 function refresh(...paths: string[]) {
   for (const path of ["/", ...paths]) revalidatePath(path);
@@ -640,4 +643,70 @@ export async function updateClient(
 
   refresh("/clients", `/clients/${clientId}`, "/settings");
   return { ok: true as const };
+}
+
+/* --------------------------------------------------------------- briefings */
+
+export async function setBriefingConfig(config: {
+  enabled: boolean;
+  slots: { weekday: number; hour: number }[];
+  agents: string[];
+  timezone: string;
+}) {
+  await saveBriefingConfig({
+    enabled: config.enabled,
+    slots: config.slots.filter((s) => s.weekday >= 0 && s.weekday <= 6 && s.hour >= 0 && s.hour <= 23),
+    agents: config.agents.filter((a): a is AgentKey => a in AGENTS),
+    timezone: config.timezone || "Europe/Oslo",
+  });
+
+  refresh("/team");
+  return { ok: true as const };
+}
+
+export async function markBriefingRead(briefingId: string) {
+  await db.update(briefings).set({ readAt: new Date() }).where(eq(briefings.id, briefingId));
+  refresh("/team");
+  return { ok: true as const };
+}
+
+export async function toggleBriefingPin(briefingId: string) {
+  const [row] = await db.select().from(briefings).where(eq(briefings.id, briefingId)).limit(1);
+  if (!row) return { ok: false as const, error: "Not found." };
+  await db
+    .update(briefings)
+    .set({ pinnedAt: row.pinnedAt ? null : new Date() })
+    .where(eq(briefings.id, briefingId));
+  refresh("/team");
+  return { ok: true as const };
+}
+
+/**
+ * Saves a briefing into the client's documents, so a good one becomes a
+ * lasting artefact rather than something that scrolls away.
+ */
+export async function keepBriefing(briefingId: string) {
+  const [row] = await db.select().from(briefings).where(eq(briefings.id, briefingId)).limit(1);
+  if (!row?.body) return { ok: false as const, error: "Nothing to keep." };
+
+  const agent = AGENTS[row.agentKey as AgentKey];
+  await db.insert(documents).values({
+    clientId: row.clientId,
+    title: row.title ?? `${agent?.role ?? "Briefing"} — ${row.slotKey}`,
+    body: row.body,
+    kind: "reference",
+    source: "manual",
+  });
+
+  await db.update(briefings).set({ pinnedAt: new Date(), readAt: row.readAt ?? new Date() }).where(eq(briefings.id, briefingId));
+  refresh("/team", "/clients");
+  return { ok: true as const };
+}
+
+/** Runs the whole cycle now, for trying it out without waiting for a schedule. */
+export async function runBriefingsNow() {
+  const planned = await planCycleNow(new Date(), { includePastSlots: true });
+  const result = await processPending(120_000);
+  refresh("/team");
+  return { ok: true as const, planned: planned.planned, ...result };
 }

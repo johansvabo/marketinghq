@@ -191,6 +191,24 @@ In the app:
 
 ---
 
+## The team's scheduled work
+
+**Team → Working on their own** turns on twice-weekly runs: each selected
+specialist studies each active client and produces work in their speciality.
+Default slots are Sunday 19:00 and Wednesday 06:00, in your timezone.
+
+Two things worth knowing:
+
+- **Vercel runs scheduled jobs within the hour**, not to the minute. Treat the
+  times as "that hour".
+- **Turning it on never backfills.** Slots that came round before you enabled it
+  stay history. Use **Run now** if you want to see a cycle immediately.
+
+Each piece costs a few cents of Claude usage, more when an agent searches the
+web. The panel shows how many pieces a cycle is before you switch it on.
+
+---
+
 ## How updates work from here
 
 This is the part that makes it a service rather than a project.

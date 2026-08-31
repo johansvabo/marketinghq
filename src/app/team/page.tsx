@@ -6,19 +6,27 @@ import { chatThreads } from "@/lib/db/schema";
 import { AGENT_LIST } from "@/lib/ai/agents";
 import { isConfigured } from "@/lib/env";
 import { relativeDay } from "@/lib/dates";
+import { getBriefingConfig, recentBriefings } from "@/lib/ai/briefings";
 import { Card, Empty, PageHeader } from "@/components/ui";
+import { BriefingFeed } from "@/components/briefing-feed";
+import { BriefingSchedule } from "@/components/briefing-schedule";
+import { clients } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Team" };
 
 export default async function TeamPage() {
-  const [threads, counts] = await Promise.all([
+  const [threads, counts, config, feed, activeClients] = await Promise.all([
     db.select().from(chatThreads).where(isNotNull(chatThreads.agentKey)).orderBy(desc(chatThreads.updatedAt)).limit(8),
     db
       .select({ agentKey: chatThreads.agentKey, n: sql<number>`count(*)` })
       .from(chatThreads)
       .where(isNotNull(chatThreads.agentKey))
       .groupBy(chatThreads.agentKey),
+    getBriefingConfig(),
+    recentBriefings(30),
+    db.select({ id: clients.id }).from(clients).where(eq(clients.status, "active")),
   ]);
 
   const countFor = new Map(counts.map((c) => [c.agentKey, Number(c.n)]));
@@ -77,7 +85,18 @@ export default async function TeamPage() {
         ))}
       </div>
 
-      <section className="mt-5">
+      <section className="mt-6 grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+        <div>
+          <h2 className="section-title mb-2">Briefings</h2>
+          <BriefingFeed rows={feed} />
+        </div>
+        <div>
+          <h2 className="section-title mb-2">Working on their own</h2>
+          <BriefingSchedule config={config} clientCount={activeClients.length} />
+        </div>
+      </section>
+
+      <section className="mt-6">
         <h2 className="section-title mb-2">Recent conversations</h2>
         {threads.length === 0 ? (
           <Card>

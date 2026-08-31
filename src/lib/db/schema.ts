@@ -449,6 +449,46 @@ export const briefs = sqliteTable("briefs", {
   generatedAt: createdAt(),
 });
 
+/* ------------------------------------------------------------- team briefings */
+
+/**
+ * A piece of proactive work from one specialist about one client.
+ *
+ * Rows are planned first and produced later: a scheduled run can involve
+ * dozens of model sessions, far more than one request may spend, so the
+ * schedule creates the work and a time-budgeted worker drains it across
+ * however many passes it takes.
+ */
+export const briefings = sqliteTable(
+  "briefings",
+  {
+    id: id(),
+    agentKey: text("agent_key").notNull(),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    /** Identifies the scheduled occurrence, e.g. 2026-08-30T19. Keeps it idempotent. */
+    slotKey: text("slot_key").notNull(),
+    // pending | running | ready | empty | error
+    status: text("status").notNull().default("pending"),
+    title: text("title"),
+    body: text("body"),
+    /** What the agent looked at, for transparency. */
+    sources: text("sources", { mode: "json" }).$type<string[]>().default([]),
+    error: text("error"),
+    readAt: integer("read_at", { mode: "timestamp" }),
+    pinnedAt: integer("pinned_at", { mode: "timestamp" }),
+    startedAt: integer("started_at", { mode: "timestamp" }),
+    completedAt: integer("completed_at", { mode: "timestamp" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("briefings_slot").on(t.agentKey, t.clientId, t.slotKey),
+    index("briefings_status").on(t.status),
+    index("briefings_unread").on(t.readAt, t.createdAt),
+  ],
+);
+
+export type Briefing = typeof briefings.$inferSelect;
+
 /* --------------------------------------------------------------- claude chat */
 
 export const chatThreads = sqliteTable("chat_threads", {
