@@ -1,0 +1,1 @@
+ALTER TABLE `chat_threads` ADD `agent_key` text;

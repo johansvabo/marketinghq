@@ -8,6 +8,8 @@ import { Markdown } from "./markdown";
 type ChatMessage = { role: "user" | "assistant"; content: string; tools?: string[] };
 
 const TOOL_LABEL: Record<string, string> = {
+  web_search: "searching the web",
+  save_draft: "saving it to the client's documents",
   search_brain: "searching what you've captured",
   list_work: "reading your tasks and projects",
   get_metrics: "pulling the numbers",
@@ -22,11 +24,20 @@ export function BrainChat({
   threadId: initialThreadId,
   suggestions,
   aiReady,
+  agentKey,
+  placeholder,
+  emptyTitle,
+  emptyHint,
 }: {
   initial: ChatMessage[];
   threadId?: string;
   suggestions: string[];
   aiReady: boolean;
+  /** Which specialist answers. Omitted means the general brain. */
+  agentKey?: string;
+  placeholder?: string;
+  emptyTitle?: string;
+  emptyHint?: string;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>(initial);
@@ -58,7 +69,7 @@ export function BrainChat({
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ threadId, message: text }),
+        body: JSON.stringify({ threadId, message: text, agentKey }),
         signal: controller.signal,
       });
 
@@ -128,10 +139,10 @@ export function BrainChat({
           <div className="flex h-full flex-col items-center justify-center gap-5 px-4 text-center">
             <div className="flex flex-col items-center gap-2">
               <Sparkles size={22} style={{ color: "var(--color-brand)" }} />
-              <h2 className="text-[17px] font-semibold tracking-tight">Ask your own record</h2>
+              <h2 className="text-[17px] font-semibold tracking-tight">{emptyTitle ?? "Ask your own record"}</h2>
               <p className="max-w-[46ch] text-[13px] leading-relaxed text-muted">
-                This reads your real tasks, projects, captured insights and connected marketing data — not the open web.
-                The more you put in, the better it gets.
+                {emptyHint ??
+                  "This reads your real tasks, projects, captured insights and connected marketing data — not the open web. The more you put in, the better it gets."}
               </p>
             </div>
             <div className="flex w-full max-w-[560px] flex-col gap-1.5">
@@ -221,7 +232,7 @@ export function BrainChat({
           }}
           rows={1}
           disabled={!aiReady}
-          placeholder="Ask anything, or tell it something worth remembering…"
+          placeholder={placeholder ?? "Ask anything, or tell it something worth remembering…"}
           className="max-h-[180px] flex-1 resize-none bg-transparent px-2 py-2 text-[14px] leading-relaxed outline-none placeholder:text-[var(--ink-muted)]"
         />
         {busy ? (

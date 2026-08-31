@@ -8,6 +8,7 @@ import {
   CalendarClock,
   Building2,
   CheckSquare,
+  Users,
   FolderKanban,
   Lightbulb,
   Moon,
@@ -25,13 +26,16 @@ const NAV: NavItem[] = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/brain", label: "Brain", icon: BrainCircuit },
+  { href: "/team", label: "Team", icon: Users },
   { href: "/insights", label: "Insights", icon: Lightbulb },
   { href: "/reports", label: "Reports", icon: CalendarClock },
 ];
 
 /** The five that fit a thumb. Settings lives behind the header on mobile. */
 /** The five that fit a thumb; the rest live behind the header on mobile. */
-const MOBILE_NAV = NAV.filter((item) => item.label !== "Insights" && item.label !== "Projects");
+const MOBILE_NAV = NAV.filter(
+  (item) => !["Insights", "Projects", "Reports"].includes(item.label),
+);
 
 function isActive(pathname: string, href: string, exact?: boolean) {
   return exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);

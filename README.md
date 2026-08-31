@@ -62,6 +62,15 @@ also write back: capture an insight, add a task. Alongside it is the library —
 every insight, learning, benchmark, decision and meeting note you've filed,
 searchable and filterable.
 
+**The team** — five specialists in their own space, working across every client:
+Iver (LinkedIn & B2B social), Marit (SEO & content), Sindre (competitors & market
+watch), Hedda (sales timing & tenders — Doffin, framework agreements, municipal
+budget cycles) and Ragnhild, who reviews the others' work and says plainly when
+it isn't good enough. They read the same clients, documents, insights and numbers
+you do, and the four who reason about the outside world can search the web, so
+they answer from current sources rather than stale memory. They can save what
+they produce straight into a client's documents.
+
 **Insights** — GA4, Meta, LinkedIn and Google Ads in one view, per client, with
 period-over-period movement and the anomalies the engine flagged.
 

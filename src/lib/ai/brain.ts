@@ -5,6 +5,7 @@ import { clients, projects } from "@/lib/db/schema";
 import { format } from "@/lib/dates";
 import { anthropic, MODEL } from "./client";
 import { BRAIN_TOOLS, runBrainTool } from "./tools";
+import { agentSystemPrompt, type Agent } from "./agents";
 
 const IDENTITY = `You are the brain behind Marketing HQ — the working memory of an independent marketing consultant and fractional CMO.
 
@@ -58,6 +59,8 @@ export async function runBrain(opts: {
   onEvent?: (event: BrainEvent) => void;
   systemExtra?: string;
   maxTurns?: number;
+  /** When set, this specialist answers instead of the general brain. */
+  agent?: Agent | null;
 }): Promise<BrainResult> {
   const client = anthropic();
   const messages = [...opts.messages];
@@ -66,9 +69,19 @@ export async function runBrain(opts: {
 
   const system: Anthropic.TextBlockParam[] = [
     // Stable prefix first so it stays cacheable across every request.
-    { type: "text", text: IDENTITY, cache_control: { type: "ephemeral" } },
+    { type: "text", text: opts.agent ? agentSystemPrompt(opts.agent) : IDENTITY, cache_control: { type: "ephemeral" } },
     { type: "text", text: await runtimeContext() },
   ];
+
+  /*
+   * Specialists who reason about the outside world — competitors, procurement
+   * notices, market moves — get web search. Without it they would answer from
+   * stale memory and sound just as confident, which is the failure mode most
+   * worth avoiding here.
+   */
+  const tools: Anthropic.ToolUnion[] = opts.agent?.web
+    ? [...BRAIN_TOOLS, { type: "web_search_20260209", name: "web_search", max_uses: 6 } as Anthropic.ToolUnion]
+    : [...BRAIN_TOOLS];
   if (opts.systemExtra) system.push({ type: "text", text: opts.systemExtra });
 
   let finalText = "";
@@ -79,7 +92,7 @@ export async function runBrain(opts: {
       max_tokens: 32_000,
       system,
       messages,
-      tools: BRAIN_TOOLS,
+      tools,
       thinking: { type: "adaptive" },
       output_config: { effort: "high" },
     });
@@ -96,6 +109,16 @@ export async function runBrain(opts: {
       .join("");
     if (text) finalText = text;
 
+    /*
+     * A server-side tool (web search) can pause a long turn rather than finish
+     * it. Treating that as "done" silently truncates the answer with no error
+     * and no warning — so push the paused turn back and let it carry on.
+     */
+    if (response.stop_reason === "pause_turn") {
+      messages.push({ role: "assistant", content: response.content });
+      continue;
+    }
+
     if (response.stop_reason !== "tool_use") {
       // Echo thinking blocks back untouched if the caller continues this thread.
       messages.push({ role: "assistant", content: response.content });
@@ -104,7 +127,12 @@ export async function runBrain(opts: {
 
     messages.push({ role: "assistant", content: response.content });
 
-    const uses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    const uses = response.content.filter(
+      (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && BRAIN_TOOLS.some((t) => t.name === b.name),
+    );
+
+    // Nothing of ours to run means the model is waiting on a server-side tool.
+    if (uses.length === 0) continue;
     const results: Anthropic.ToolResultBlockParam[] = [];
 
     // Run them in parallel and return every result in one user message —

@@ -132,6 +132,25 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "save_draft",
+    description:
+      "Save a piece of work into the client's documents — a drafted post, a content plan, a competitor briefing, a review. Use this when you have produced something the user will want back later, or when they ask you to save it. Do not save conversational answers.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Specific enough to find in a year. Include the client and what it is." },
+        body: { type: "string", description: "The full piece, in markdown. Save the work itself, not a summary of it." },
+        client: { type: "string", description: "Client name or id. Omit only if it genuinely belongs to no client." },
+        kind: {
+          type: "string",
+          enum: ["brief", "strategy", "brand", "process", "research", "reference", "note"],
+        },
+      },
+      required: ["title", "body"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "create_task",
     description:
       "Add a task. Use when the user commits to doing something, or asks you to remind them. Keep titles action-shaped: start with a verb.",
@@ -190,6 +209,8 @@ export async function runBrainTool(name: string, input: Record<string, any>): Pr
       return getClientBrief(input);
     case "capture_insight":
       return captureInsight(input);
+    case "save_draft":
+      return saveDraft(input);
     case "create_task":
       return createTaskTool(input);
     default:
@@ -498,6 +519,26 @@ async function captureInsight(input: any): Promise<ToolResult> {
     .returning();
 
   return { text: `Saved to the brain: "${row.title}"${client ? ` under ${client.name}` : ""}.`, data: row.id };
+}
+
+async function saveDraft(input: any): Promise<ToolResult> {
+  const client = await resolveClient(input.client);
+
+  const [row] = await db
+    .insert(documents)
+    .values({
+      clientId: client?.id ?? null,
+      title: input.title,
+      body: input.body,
+      kind: input.kind ?? "note",
+      source: "manual",
+    })
+    .returning();
+
+  return {
+    text: `Saved to ${client ? `${client.name}'s` : "the general"} documents as "${row.title}". It is now searchable and the rest of the team can read it.`,
+    data: row.id,
+  };
 }
 
 async function createTaskTool(input: any): Promise<ToolResult> {

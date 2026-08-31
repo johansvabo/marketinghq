@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { chatMessages, chatThreads } from "@/lib/db/schema";
 import { isSignedIn } from "@/lib/auth";
 import { runBrain } from "@/lib/ai/brain";
+import { getAgent } from "@/lib/ai/agents";
 import { describeAiError } from "@/lib/ai/client";
 
 export const runtime = "nodejs";
@@ -17,10 +18,11 @@ export const maxDuration = 250;
 export async function POST(request: Request) {
   if (!(await isSignedIn())) return new Response("Unauthorized", { status: 401 });
 
-  const { threadId, message, context } = (await request.json()) as {
+  const { threadId, message, context, agentKey } = (await request.json()) as {
     threadId?: string;
     message: string;
     context?: string;
+    agentKey?: string;
   };
 
   if (!message?.trim()) return new Response("Empty message", { status: 400 });
@@ -29,7 +31,7 @@ export async function POST(request: Request) {
   if (!thread) {
     [thread] = await db
       .insert(chatThreads)
-      .values({ title: message.trim().slice(0, 60) })
+      .values({ title: message.trim().slice(0, 60), agentKey: agentKey ?? null })
       .returning();
   }
 
@@ -62,6 +64,7 @@ export async function POST(request: Request) {
         const result = await runBrain({
           messages,
           systemExtra: context,
+          agent: getAgent(agentKey ?? thread.agentKey),
           onEvent: (event) => {
             if (event.type === "text") send("text", { text: event.text });
             else if (event.type === "tool_start") send("tool", { name: event.name, state: "start" });

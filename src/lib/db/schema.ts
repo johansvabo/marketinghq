@@ -454,6 +454,8 @@ export const briefs = sqliteTable("briefs", {
 export const chatThreads = sqliteTable("chat_threads", {
   id: id(),
   title: text("title").notNull().default("New conversation"),
+  /** Which specialist this conversation is with. Null is the general brain. */
+  agentKey: text("agent_key"),
   clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
   projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
   createdAt: createdAt(),
