@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, BookmarkPlus, Check, Loader2, Pin } from "lucide-react";
+import { AlertTriangle, BookmarkPlus, Check, Clock, Loader2, Pin } from "lucide-react";
 import { clsx } from "clsx";
 import type { Briefing } from "@/lib/db/schema";
 import { AGENTS, type AgentKey } from "@/lib/ai/agents";
@@ -61,8 +61,10 @@ export function BriefingFeed({ rows }: { rows: Row[] }) {
               <button onClick={() => open(row)} className="text-left text-[14px] font-semibold tracking-[-0.01em] hover:underline">
                 {briefing.status === "error"
                   ? `${agent?.name ?? briefing.agentKey} couldn't finish`
-                  : working
+                  : briefing.status === "running"
                     ? `${agent?.name ?? briefing.agentKey} is working…`
+                    : working
+                      ? `${agent?.name ?? briefing.agentKey} — queued`
                     : briefing.status === "empty"
                       ? `${agent?.name ?? briefing.agentKey}: nothing worth reporting`
                       : (briefing.title ?? `${agent?.role} briefing`)}
@@ -71,7 +73,8 @@ export function BriefingFeed({ rows }: { rows: Row[] }) {
               {row.clientName && <ClientBadge name={row.clientName} color={row.clientColor} />}
 
               <div className="ml-auto flex items-center gap-1.5">
-                {working && <Loader2 size={13} className="animate-spin text-[var(--ink-muted)]" />}
+                {briefing.status === "running" && <Loader2 size={13} className="animate-spin text-[var(--ink-muted)]" />}
+                {briefing.status === "pending" && <Clock size={12} className="text-[var(--ink-muted)]" />}
                 {briefing.status === "error" && <AlertTriangle size={13} style={{ color: "var(--color-urgent)" }} />}
                 <span className="text-[11px] text-muted">{agent?.name}</span>
                 <span className="text-[11px] text-muted">{briefing.slotKey.replace("T", " ")}:00</span>

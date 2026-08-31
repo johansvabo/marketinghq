@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { briefings, clients, settings } from "@/lib/db/schema";
 import { lastOccurrence } from "@/lib/timezone";
@@ -103,6 +103,25 @@ export async function planCycle(
   return { planned, slot };
 }
 
+/**
+ * A run marks its row `running` before calling the model. If that request is
+ * then killed — a serverless timeout, a deploy mid-flight — the row stays
+ * `running` for ever and no later pass ever picks it up: the work silently
+ * disappears. Anything that has been "running" longer than a request could
+ * possibly last is treated as abandoned and put back.
+ */
+const STALE_RUNNING_MS = 15 * 60 * 1000;
+
+async function reclaimAbandoned(now: Date): Promise<number> {
+  const cutoff = new Date(now.getTime() - STALE_RUNNING_MS);
+  const rows = await db
+    .update(briefings)
+    .set({ status: "pending", startedAt: null })
+    .where(and(eq(briefings.status, "running"), lt(briefings.startedAt, cutoff)))
+    .returning();
+  return rows.length;
+}
+
 /** Waiting work, with the reviewer last so she can read the others' output. */
 async function nextPending() {
   const rows = await db
@@ -117,9 +136,13 @@ async function nextPending() {
   return [...rows].sort((a, b) => Number(reviewers.has(a.briefing.agentKey as AgentKey)) - Number(reviewers.has(b.briefing.agentKey as AgentKey)))[0];
 }
 
-export async function processPending(budgetMs = 200_000, now = new Date()): Promise<{ produced: number; failed: number; remaining: number }> {
-  if (!isConfigured.anthropic()) return { produced: 0, failed: 0, remaining: 0 };
+export async function processPending(
+  budgetMs = 200_000,
+  now = new Date(),
+): Promise<{ produced: number; failed: number; remaining: number; reclaimed: number }> {
+  if (!isConfigured.anthropic()) return { produced: 0, failed: 0, remaining: 0, reclaimed: 0 };
 
+  const reclaimed = await reclaimAbandoned(now);
   const deadline = Date.now() + budgetMs;
   let produced = 0;
   let failed = 0;
@@ -181,7 +204,7 @@ export async function processPending(budgetMs = 200_000, now = new Date()): Prom
     .from(briefings)
     .where(eq(briefings.status, "pending"));
 
-  return { produced, failed, remaining: Number(n) };
+  return { produced, failed, remaining: Number(n), reclaimed };
 }
 
 /** The reviewer needs this cycle's other briefings; everyone else needs the brief. */
