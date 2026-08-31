@@ -36,13 +36,23 @@ export function nextDueDate(schedule: Pick<ReportSchedule, "cadence" | "dayOf">,
 
 /** The period a report published on `dueAt` should cover. */
 export function reportingPeriod(cadence: Cadence, dueAt: Date): { start: string; end: string } {
-  const end = subDays(startOfDay(dueAt), 1);
-  const lengths: Record<Cadence, number> = { weekly: 7, biweekly: 14, monthly: 30, quarterly: 91 };
-  if (cadence === "monthly") {
-    // Calendar month, which is what clients actually expect on a monthly report.
-    const start = new Date(end.getFullYear(), end.getMonth(), 1);
+  /*
+   * Monthly and quarterly reports cover whole calendar periods that have
+   * finished — a monthly report due on the 3rd covers all of last month, not
+   * the first two days of this one. Getting this wrong is the kind of error a
+   * client spots before you do, because the totals will not match theirs.
+   */
+  if (cadence === "monthly" || cadence === "quarterly") {
+    const monthsBack = cadence === "monthly" ? 1 : 3;
+    const start = new Date(dueAt.getFullYear(), dueAt.getMonth() - monthsBack, 1);
+    // Day 0 of the due month is the last day of the month before it.
+    const end = new Date(dueAt.getFullYear(), dueAt.getMonth(), 0);
     return { start: iso(start), end: iso(end) };
   }
+
+  // Weekly and biweekly are rolling windows ending the day before the report.
+  const end = subDays(startOfDay(dueAt), 1);
+  const lengths = { weekly: 7, biweekly: 14 } as const;
   return { start: iso(subDays(end, lengths[cadence] - 1)), end: iso(end) };
 }
 
