@@ -84,7 +84,13 @@ export function DocumentUpload({
         if (!response.ok) throw new Error(payload.error ?? "could not be recorded.");
         created.push(payload);
       } catch (caught) {
-        failed.push({ name: file.name, reason: caught instanceof Error ? caught.message : "could not be uploaded." });
+        const raw = caught instanceof Error ? caught.message : "could not be uploaded.";
+        // The SDK reports token failures with a message that names no cause.
+        // Say where the real reason is rather than leaving a dead end.
+        const reason = /client token/i.test(raw)
+          ? `${raw}. The store refused to issue an upload token — the reason is in Vercel → Logs, filtered to this deployment.`
+          : raw;
+        failed.push({ name: file.name, reason });
       }
     }
 
