@@ -6,6 +6,7 @@ import {
   clients,
   documents,
   insights,
+  milestones,
   projects,
   reportRuns,
   stakeholders,
@@ -151,6 +152,71 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "create_project",
+    description:
+      "Create a project — a body of work with an end state, like a campaign, an audit, a launch, or a workstream agreed in a meeting. Use this when several tasks belong together under one outcome. Do not create a project for a single task.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Short and recognisable. 'Paid media plan across markets', not 'Marketing'." },
+        client: { type: "string" },
+        goal: { type: "string", description: "What done looks like, ideally measurable. This is the field that makes a project worth having." },
+        dueDate: { type: "string", description: "YYYY-MM-DD, when it should be finished, if a date was discussed." },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_milestone",
+    description:
+      "Add a dated milestone to a project — a fixed point other people are counting on, like a webinar, a launch, or a deadline. Only for things with a real date.",
+    input_schema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project name or id." },
+        name: { type: "string" },
+        dueDate: { type: "string", description: "YYYY-MM-DD." },
+      },
+      required: ["project", "name", "dueDate"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "add_person",
+    description:
+      "Record someone at a client — a contact, decision maker or partner mentioned in a meeting. Set a contact cadence when they are someone the relationship depends on.",
+    input_schema: {
+      type: "object",
+      properties: {
+        client: { type: "string" },
+        name: { type: "string" },
+        role: { type: "string" },
+        email: { type: "string" },
+        contactCadenceDays: {
+          type: "number",
+          description: "How often they should hear from us, in days. 0 for no cadence. Only set this when it was actually discussed or is clearly warranted.",
+        },
+      },
+      required: ["client", "name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_client_context",
+    description:
+      "Update a client's standing context — the few lines you would tell a colleague taking the account over. Read the existing context first and build on it rather than replacing what is already true. This is sent to every specialist with every question about them, so keep it short and durable.",
+    input_schema: {
+      type: "object",
+      properties: {
+        client: { type: "string" },
+        notes: { type: "string", description: "The full replacement text, including anything still true from before." },
+      },
+      required: ["client", "notes"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "create_task",
     description:
       "Add a task. Use when the user commits to doing something, or asks you to remind them. Keep titles action-shaped: start with a verb.",
@@ -209,6 +275,14 @@ export async function runBrainTool(name: string, input: Record<string, any>): Pr
       return getClientBrief(input);
     case "capture_insight":
       return captureInsight(input);
+    case "create_project":
+      return createProjectTool(input);
+    case "create_milestone":
+      return createMilestoneTool(input);
+    case "add_person":
+      return addPerson(input);
+    case "update_client_context":
+      return updateClientContext(input);
     case "save_draft":
       return saveDraft(input);
     case "create_task":
@@ -519,6 +593,79 @@ async function captureInsight(input: any): Promise<ToolResult> {
     .returning();
 
   return { text: `Saved to the brain: "${row.title}"${client ? ` under ${client.name}` : ""}.`, data: row.id };
+}
+
+async function resolveProject(nameOrId: string) {
+  const rows = await db
+    .select()
+    .from(projects)
+    .where(or(eq(projects.id, nameOrId), like(projects.name, `%${nameOrId}%`)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function createProjectTool(input: any): Promise<ToolResult> {
+  const client = await resolveClient(input.client);
+
+  const [row] = await db
+    .insert(projects)
+    .values({
+      name: input.name.trim(),
+      clientId: client?.id ?? null,
+      goal: input.goal?.trim() || null,
+      status: "active",
+      startDate: new Date(),
+      dueDate: input.dueDate ? new Date(`${input.dueDate}T17:00:00`) : null,
+    })
+    .returning();
+
+  return {
+    text: `Project created: "${row.name}"${client ? ` for ${client.name}` : ""}${row.goal ? `, goal: ${row.goal}` : " — no goal set, which is worth fixing"}.`,
+    data: row.id,
+  };
+}
+
+async function createMilestoneTool(input: any): Promise<ToolResult> {
+  const project = await resolveProject(input.project);
+  if (!project) return { text: `No project matching "${input.project}". Create it first, then add the milestone.` };
+
+  await db.insert(milestones).values({
+    projectId: project.id,
+    name: input.name.trim(),
+    dueDate: new Date(`${input.dueDate}T17:00:00`),
+  });
+
+  return { text: `Milestone "${input.name}" added to ${project.name} for ${input.dueDate}.` };
+}
+
+async function addPerson(input: any): Promise<ToolResult> {
+  const client = await resolveClient(input.client);
+  if (!client) return { text: `No client matching "${input.client}".` };
+
+  const [row] = await db
+    .insert(stakeholders)
+    .values({
+      clientId: client.id,
+      name: input.name.trim(),
+      role: input.role?.trim() || null,
+      email: input.email?.trim().toLowerCase() || null,
+      contactCadenceDays: Math.max(0, Math.round(input.contactCadenceDays ?? 0)),
+    })
+    .returning();
+
+  return {
+    text: `${row.name} added to ${client.name}${row.role ? ` as ${row.role}` : ""}${
+      row.contactCadenceDays ? `, with a ${row.contactCadenceDays}-day contact cadence` : ""
+    }.`,
+  };
+}
+
+async function updateClientContext(input: any): Promise<ToolResult> {
+  const client = await resolveClient(input.client);
+  if (!client) return { text: `No client matching "${input.client}".` };
+
+  await db.update(clients).set({ notes: input.notes.trim() }).where(eq(clients.id, client.id));
+  return { text: `Standing context updated for ${client.name}. Every specialist now sees this with every question about them.` };
 }
 
 async function saveDraft(input: any): Promise<ToolResult> {
