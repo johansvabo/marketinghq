@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   calendarEvents,
@@ -41,6 +41,8 @@ export type Rule = {
 };
 
 export type RuleContext = { now: Date };
+
+const OPEN_STATUSES = ["todo", "doing", "waiting"] as const;
 
 const SEVERITY_BASE = { urgent: 70, important: 40, fyi: 15 } as const;
 
@@ -209,11 +211,11 @@ const projectsWithoutNextAction: Rule = {
       .select({
         project: projects,
         client: clients,
-        open: sql<number>`(
-          select count(*) from ${tasks}
-          where ${tasks.projectId} = ${projects.id}
-            and ${tasks.status} in ('todo','doing','waiting')
-        )`,
+        // Must be $count: a hand-written correlated subquery renders its
+        // columns unqualified, so both sides resolve to the inner table and the
+        // count is always zero — which made every active project look
+        // abandoned and every deadline look 0% done.
+        open: db.$count(tasks, and(eq(tasks.projectId, projects.id), inArray(tasks.status, OPEN_STATUSES))),
       })
       .from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))
@@ -248,8 +250,8 @@ const projectDeadlineRisk: Rule = {
       .select({
         project: projects,
         client: clients,
-        open: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${projects.id} and ${tasks.status} in ('todo','doing','waiting'))`,
-        total: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${projects.id} and ${tasks.status} != 'dropped')`,
+        open: db.$count(tasks, and(eq(tasks.projectId, projects.id), inArray(tasks.status, OPEN_STATUSES))),
+        total: db.$count(tasks, and(eq(tasks.projectId, projects.id), ne(tasks.status, "dropped"))),
       })
       .from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))
@@ -560,11 +562,10 @@ const insightDrought: Rule = {
     const rows = await db
       .select({
         client: clients,
-        recent: sql<number>`(
-          select count(*) from ${insights}
-          where ${insights.clientId} = ${clients.id}
-            and date(${insights.occurredAt}, 'unixepoch') >= ${cutoff}
-        )`,
+        recent: db.$count(
+          insights,
+          and(eq(insights.clientId, clients.id), gte(insights.occurredAt, subDays(now, 30))),
+        ),
       })
       .from(clients)
       .where(eq(clients.status, "active"));

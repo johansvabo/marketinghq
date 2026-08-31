@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, documents, insights, projects, stakeholders, tasks } from "@/lib/db/schema";
 import { Card, ClientBadge, Empty, PageHeader } from "@/components/ui";
@@ -7,6 +7,8 @@ import { NewClientDialog } from "@/components/new-client";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clients" };
+
+const OPEN = ["todo", "doing", "waiting"];
 
 const ENGAGEMENT_LABEL: Record<string, string> = {
   retainer: "Retainer",
@@ -19,11 +21,14 @@ export default async function ClientsPage() {
   const rows = await db
     .select({
       client: clients,
-      openTasks: sql<number>`(select count(*) from ${tasks} where ${tasks.clientId} = ${clients.id} and ${tasks.status} in ('todo','doing','waiting'))`,
-      activeProjects: sql<number>`(select count(*) from ${projects} where ${projects.clientId} = ${clients.id} and ${projects.status} = 'active')`,
-      docCount: sql<number>`(select count(*) from ${documents} where ${documents.clientId} = ${clients.id})`,
-      insightCount: sql<number>`(select count(*) from ${insights} where ${insights.clientId} = ${clients.id})`,
-      peopleCount: sql<number>`(select count(*) from ${stakeholders} where ${stakeholders.clientId} = ${clients.id})`,
+      // $count builds a properly qualified correlated subquery. Hand-writing
+      // these in a sql`` template renders the columns unqualified, so both
+      // sides resolve to the inner table and every count comes back zero.
+      openTasks: db.$count(tasks, and(eq(tasks.clientId, clients.id), inArray(tasks.status, OPEN))),
+      activeProjects: db.$count(projects, and(eq(projects.clientId, clients.id), eq(projects.status, "active"))),
+      docCount: db.$count(documents, eq(documents.clientId, clients.id)),
+      insightCount: db.$count(insights, eq(insights.clientId, clients.id)),
+      peopleCount: db.$count(stakeholders, eq(stakeholders.clientId, clients.id)),
     })
     .from(clients)
     .orderBy(asc(clients.status), asc(clients.name));

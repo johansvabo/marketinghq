@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { ArrowLeft, FileText, Lightbulb, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { clients, documents, insights, projects, reportRuns, stakeholders, tasks } from "@/lib/db/schema";
@@ -30,7 +30,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
     db
       .select({
         project: projects,
-        open: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${projects.id} and ${tasks.status} in ('todo','doing','waiting'))`,
+        open: db.$count(tasks, and(eq(tasks.projectId, projects.id), inArray(tasks.status, OPEN))),
       })
       .from(projects)
       .where(eq(projects.clientId, id))

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, projects, tasks } from "@/lib/db/schema";
 import { relativeDay } from "@/lib/dates";
@@ -31,8 +31,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         project: projects,
         clientName: clients.name,
         clientColor: clients.color,
-        openTasks: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${projects.id} and ${tasks.status} in ('todo','doing','waiting'))`,
-        totalTasks: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${projects.id} and ${tasks.status} != 'dropped')`,
+        openTasks: db.$count(tasks, and(eq(tasks.projectId, projects.id), inArray(tasks.status, ["todo", "doing", "waiting"]))),
+        totalTasks: db.$count(tasks, and(eq(tasks.projectId, projects.id), ne(tasks.status, "dropped"))),
       })
       .from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))

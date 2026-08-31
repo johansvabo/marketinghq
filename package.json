@@ -13,7 +13,9 @@
     "setup": "npm run db:migrate && npm run seed",
     "test:import": "tsx scripts/test-import.mts",
     "db:migrate": "drizzle-kit migrate",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "test:counts": "tsx scripts/test-counts.mts",
+    "test": "npm run test:import && npm run test:counts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
