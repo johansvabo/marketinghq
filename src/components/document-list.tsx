@@ -39,11 +39,13 @@ export function DocumentList({
   clientId,
   documents,
   storageOn,
+  canDirect,
   access,
 }: {
   clientId: string;
   documents: Document[];
   storageOn: boolean;
+  canDirect: boolean;
   access: "public" | "private";
 }) {
   const router = useRouter();
@@ -85,7 +87,7 @@ export function DocumentList({
 
   return (
     <div className="flex flex-col gap-2.5">
-      <DocumentUpload clientId={clientId} storageOn={storageOn} access={access} />
+      <DocumentUpload clientId={clientId} storageOn={storageOn} canDirect={canDirect} access={access} />
 
       {!storageOn && documents.some((d) => d.fileName && !d.fileUrl) && (
         <p className="text-[11.5px] leading-relaxed text-muted">

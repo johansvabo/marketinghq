@@ -26,10 +26,13 @@ type Result = {
 export function DocumentUpload({
   clientId,
   storageOn,
+  canDirect,
   access,
 }: {
   clientId: string;
   storageOn: boolean;
+  /** Whether the browser can upload straight to storage — needs a read-write token. */
+  canDirect: boolean;
   /** Must match the store's own setting — a private store rejects public blobs. */
   access: "public" | "private";
 }) {
@@ -85,12 +88,30 @@ export function DocumentUpload({
         created.push(payload);
       } catch (caught) {
         const raw = caught instanceof Error ? caught.message : "could not be uploaded.";
-        // The SDK reports token failures with a message that names no cause.
-        // Say where the real reason is rather than leaving a dead end.
-        const reason = /client token/i.test(raw)
-          ? `${raw}. The store refused to issue an upload token — the reason is in Vercel → Logs, filtered to this deployment.`
-          : raw;
-        failed.push({ name: file.name, reason });
+
+        /*
+         * If the store will not issue an upload token, the direct path is
+         * unavailable however healthy storage looks. Anything small enough can
+         * still go through the server, so fall back rather than failing — a
+         * misconfiguration should cost the size limit, not the feature.
+         */
+        if (/client token/i.test(raw) && file.size <= MAX_DIRECT_POST_BYTES) {
+          try {
+            const viaServer = await sendThroughServer([file]);
+            created.push(...viaServer.created);
+            failed.push(...viaServer.failed);
+            continue;
+          } catch {
+            /* fall through to reporting the original failure */
+          }
+        }
+
+        failed.push({
+          name: file.name,
+          reason: /client token/i.test(raw)
+            ? `is ${formatBytes(file.size)} and the store would not issue an upload token, so it cannot be sent directly. Files up to ${formatBytes(MAX_DIRECT_POST_BYTES)} still work. Settings explains how to lift this.`
+            : raw,
+        });
       }
     }
 
@@ -118,7 +139,7 @@ export function DocumentUpload({
     setProgress(null);
 
     try {
-      setResult(storageOn ? await sendDirect(list) : await sendThroughServer(list));
+      setResult(storageOn && canDirect ? await sendDirect(list) : await sendThroughServer(list));
       router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The upload failed — check your connection and try again.");
@@ -186,11 +207,13 @@ export function DocumentUpload({
             </p>
             <p
               className="text-[11.5px] font-semibold"
-              style={{ color: storageOn ? "var(--color-good)" : "var(--color-warn)" }}
+              style={{ color: storageOn && canDirect ? "var(--color-good)" : "var(--color-warn)" }}
             >
-              {storageOn
-                ? `File storage on · up to ${formatBytes(MAX_UPLOAD_BYTES)} each, originals kept`
-                : `File storage off · ${formatBytes(MAX_DIRECT_POST_BYTES)} limit — connect a Blob store in Vercel to lift it`}
+              {!storageOn
+                ? `File storage off · ${formatBytes(MAX_DIRECT_POST_BYTES)} limit — connect a Blob store in Vercel to lift it`
+                : canDirect
+                  ? `File storage on · up to ${formatBytes(MAX_UPLOAD_BYTES)} each, originals kept`
+                  : `File storage on · ${formatBytes(MAX_DIRECT_POST_BYTES)} limit — see Settings to allow large uploads`}
             </p>
           </>
         )}

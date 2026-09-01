@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { db, dbInitError } from "@/lib/db";
 import { env, isConfigured } from "@/lib/env";
 import { looksLikeAPastedBlock } from "@/lib/config-warnings";
-import { blobTokenSource, storageAvailable } from "@/lib/storage";
+import { blobTokenSource, canDirectUpload, storageAvailable } from "@/lib/storage";
 
 export type HealthState = "ok" | "warn" | "error";
 
@@ -176,11 +176,18 @@ async function configChecks(): Promise<Check[]> {
   const storage = await storageAvailable();
   checks.push(
     storage.ok
-      ? {
-          label: "File storage",
-          state: "ok",
-          hint: blobTokenSource() ? `on · ${blobTokenSource()}` : "on",
-        }
+      ? canDirectUpload()
+        ? { label: "File storage", state: "ok", hint: `on · up to 100 MB` }
+        : {
+            label: "File storage",
+            state: "warn",
+            hint: "on · 4 MB limit",
+            fix:
+              "Files are stored and their originals kept, but large uploads need a BLOB_READ_WRITE_TOKEN in the " +
+              "environment — a browser upload token is derived from it, so without one everything has to go through " +
+              "the server and is capped at 4 MB. In Vercel: Storage → your Blob store → copy its read-write token into " +
+              "Environment Variables as BLOB_READ_WRITE_TOKEN, then redeploy.",
+          }
       : {
           label: "File storage",
           state: "warn",

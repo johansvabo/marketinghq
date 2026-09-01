@@ -59,6 +59,17 @@ export async function storageAvailable(): Promise<Probe> {
  * app can see a token at all, and guessing at that from the outside wastes far
  * more time than reporting it does.
  */
+/**
+ * Whether the browser can upload straight to storage.
+ *
+ * Storing a file server-side and minting a client upload token are two
+ * different permissions. The store can authorise API calls without exposing a
+ * static token — which is why listing works — but a client token is *derived
+ * from* the read-write secret, so without one in the environment the direct
+ * path cannot work at all, whatever the probe says.
+ */
+export const canDirectUpload = () => Boolean(blobToken());
+
 export function blobTokenSource(): string | null {
   if (process.env.BLOB_READ_WRITE_TOKEN?.trim()) return "BLOB_READ_WRITE_TOKEN";
   const key = Object.keys(process.env).find((k) => k.endsWith("BLOB_READ_WRITE_TOKEN") && process.env[k]?.trim());
