@@ -695,7 +695,8 @@ export async function keepBriefing(briefingId: string) {
     title: row.title ?? `${agent?.role ?? "Briefing"} — ${row.slotKey}`,
     body: row.body,
     kind: "reference",
-    source: "manual",
+    source: "agent",
+    authorAgent: row.agentKey,
   });
 
   await db.update(briefings).set({ pinnedAt: new Date(), readAt: row.readAt ?? new Date() }).where(eq(briefings.id, briefingId));
@@ -709,4 +710,39 @@ export async function runBriefingsNow() {
   const result = await processPending(120_000);
   refresh("/team");
   return { ok: true as const, planned: planned.planned, ...result };
+}
+
+/**
+ * Archiving rather than deleting. Work that is finished, superseded or simply
+ * wrong stays searchable and stays in the record, but stops competing for
+ * attention — which is what keeps a growing library usable.
+ */
+export async function toggleDocumentArchived(documentId: string) {
+  const [row] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
+  if (!row) return { ok: false as const, error: "Not found." };
+  await db
+    .update(documents)
+    .set({ status: row.status === "archived" ? "active" : "archived" })
+    .where(eq(documents.id, documentId));
+  refresh("/clients", `/clients/${row.clientId ?? ""}`);
+  return { ok: true as const };
+}
+
+export async function toggleInsightArchived(insightId: string) {
+  const [row] = await db.select().from(insights).where(eq(insights.id, insightId)).limit(1);
+  if (!row) return { ok: false as const, error: "Not found." };
+  await db
+    .update(insights)
+    .set({ status: row.status === "archived" ? "active" : "archived" })
+    .where(eq(insights.id, insightId));
+  refresh("/brain", "/clients", `/clients/${row.clientId ?? ""}`);
+  return { ok: true as const };
+}
+
+/** Files a piece of the team's work under the project it belongs to. */
+export async function setDocumentProject(documentId: string, projectId: string | null) {
+  const [row] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
+  await db.update(documents).set({ projectId: projectId || null }).where(eq(documents.id, documentId));
+  refresh("/clients", `/clients/${row?.clientId ?? ""}`);
+  return { ok: true as const };
 }

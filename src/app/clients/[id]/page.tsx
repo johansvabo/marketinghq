@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { ArrowLeft, FileText, Lightbulb, Users } from "lucide-react";
+import { ArrowLeft, FileText, Lightbulb, Sparkles, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { clients, documents, insights, projects, reportRuns, stakeholders, tasks } from "@/lib/db/schema";
 import { relativeDay } from "@/lib/dates";
@@ -10,6 +10,7 @@ import { Card, CardTitle, Chip, Delta, Empty, PageHeader, Progress, StatStrip, Z
 import { TaskList } from "@/components/tasks";
 import { InsightRow } from "@/components/insight-row";
 import { DocumentList } from "@/components/document-list";
+import { TeamWork } from "@/components/team-work";
 import { ClientNotes } from "@/components/client-notes";
 import { blobAccess, canDirectUpload, storageAvailable } from "@/lib/storage";
 
@@ -56,6 +57,15 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
 
   const headline = movement.filter((m) => ["spend", "conversions", "sessions", "cost_per_conversion"].includes(m.metric));
 
+  /*
+   * Your material and the team's output are different kinds of thing — one is
+   * what the client gave you, the other is a proposal — so they get separate
+   * homes rather than one pile you have to read carefully to tell apart.
+   */
+  const myDocs = docs.filter((d) => d.source !== "agent" && d.status !== "archived");
+  const teamDocs = docs.filter((d) => d.source === "agent");
+  const liveInsights = clientInsights.filter((i) => i.status !== "archived");
+
   return (
     <>
       <Link href="/clients" className="btn btn-ghost btn-sm mb-3 -ml-2">
@@ -100,21 +110,57 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
           items={[
             { label: "Open tasks", value: openTasks.length, tone: openTasks.length > 0 ? "neutral" : "good" },
             { label: "Active projects", value: projectRows.filter((p) => p.project.status === "active").length },
-            { label: "Documents", value: docs.length },
-            { label: "Insights", value: clientInsights.length },
+            { label: "Documents", value: myDocs.length },
+            { label: "Team output", value: teamDocs.filter((d) => d.status !== "archived").length },
           ]}
         />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <div className="flex flex-col gap-4">
-          <Zone title="Documents" icon={<FileText size={14} strokeWidth={2.2} />} tone="info" count={docs.length || undefined}>
-            <DocumentList clientId={id} documents={docs} storageOn={storage.ok} canDirect={canDirectUpload()} access={blobAccess()} />
+          <Zone
+            title="Source material"
+            icon={<FileText size={14} strokeWidth={2.2} />}
+            tone="info"
+            count={myDocs.length || undefined}
+            aside="what you uploaded or wrote"
+          >
+            <DocumentList
+              clientId={id}
+              documents={myDocs}
+              storageOn={storage.ok}
+              canDirect={canDirectUpload()}
+              access={blobAccess()}
+            />
           </Zone>
 
-          <Zone title="What we know" icon={<Lightbulb size={14} strokeWidth={2.2} />} tone="brand" count={clientInsights.length || undefined}
-            aside={<Link href={`/brain/new?client=${id}`} className="underline">capture</Link>}>
-            {clientInsights.length === 0 ? (
+          <Zone
+            title="Work the team produced"
+            icon={<Sparkles size={14} strokeWidth={2.2} />}
+            tone="brand"
+            count={teamDocs.filter((d) => d.status !== "archived").length || undefined}
+            aside="drafts and proposals, not ground truth"
+          >
+            <TeamWork
+              documents={teamDocs}
+              projects={projectRows.map((r) => ({ id: r.project.id, name: r.project.name }))}
+              showArchived={false}
+            />
+          </Zone>
+
+          <Zone
+            title="What we know"
+            icon={<Lightbulb size={14} strokeWidth={2.2} />}
+            tone="good"
+            count={liveInsights.length || undefined}
+            aside={
+              <span className="flex items-center gap-2">
+                <Link href={`/brain?tab=library&client=${id}`} className="underline">all</Link>
+                <Link href={`/brain/new?client=${id}`} className="underline">capture</Link>
+              </span>
+            }
+          >
+            {liveInsights.length === 0 ? (
               <Card>
                 <Empty
                   title="Nothing captured yet"
@@ -129,9 +175,16 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               </Card>
             ) : (
               <div className="flex flex-col gap-2.5">
-                {clientInsights.map((entry) => (
+                {/* Pinned first, then the most recent — the rest live in the library
+                    so this panel stays readable as the client's history grows. */}
+                {liveInsights.slice(0, 6).map((entry) => (
                   <InsightRow key={entry.id} insight={entry} clientName={client.name} clientColor={client.color} />
                 ))}
+                {liveInsights.length > 6 && (
+                  <Link href={`/brain?tab=library&client=${id}`} className="btn btn-sm self-start">
+                    All {liveInsights.length} for {client.name}
+                  </Link>
+                )}
               </div>
             )}
           </Zone>

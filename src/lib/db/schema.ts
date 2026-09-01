@@ -206,6 +206,8 @@ export const insights = sqliteTable(
     // 1..5 — how much you trust / weight this
     confidence: integer("confidence").notNull().default(3),
     pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+    /** active | archived — retires something that stopped being true. */
+    status: text("status").notNull().default("active"),
     occurredAt: integer("occurred_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
@@ -233,8 +235,19 @@ export const documents = sqliteTable(
     kind: text("kind").notNull().default("note"),
     tags: text("tags", { mode: "json" }).$type<string[]>().default([]),
     pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
-    // manual | upload | import
+    /*
+     * Who produced this, which is the difference between ground truth and a
+     * proposal. A brand book the client sent is authoritative; a draft an agent
+     * wrote on Sunday is a suggestion. Mixing them means you cannot tell at a
+     * glance which is which.
+     *   upload | manual | import  → yours
+     *   agent                     → produced by the team
+     */
     source: text("source").notNull().default("manual"),
+    /** Which specialist produced it, when source is "agent". */
+    authorAgent: text("author_agent"),
+    /** active | archived — archived stays searchable but is out of the way. */
+    status: text("status").notNull().default("active"),
 
     // Set when the document came from a file. `body` then holds the extracted
     // text — that is what gets searched and what Claude reads — while these

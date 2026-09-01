@@ -178,7 +178,7 @@ export async function runBrain(opts: {
         opts.onEvent?.({ type: "tool_start", name: use.name, input });
         toolCalls.push({ name: use.name, input });
         try {
-          const result = await runBrainTool(use.name, input);
+          const result = await runBrainTool(use.name, input, { agentKey: opts.agent?.key });
           opts.onEvent?.({ type: "tool_end", name: use.name, summary: result.text.slice(0, 120) });
           results.push({ type: "tool_result", tool_use_id: use.id, content: result.text });
         } catch (error) {

@@ -142,6 +142,10 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
         title: { type: "string", description: "Specific enough to find in a year. Include the client and what it is." },
         body: { type: "string", description: "The full piece, in markdown. Save the work itself, not a summary of it." },
         client: { type: "string", description: "Client name or id. Omit only if it genuinely belongs to no client." },
+        project: {
+          type: "string",
+          description: "Project name or id, when the work belongs to one. Filing it under the project is what stops it becoming loose material later.",
+        },
         kind: {
           type: "string",
           enum: ["brief", "strategy", "brand", "process", "research", "reference", "note"],
@@ -261,7 +265,14 @@ const OPEN_STATUSES = ["todo", "doing", "waiting"];
 
 export type ToolResult = { text: string; data?: unknown };
 
-export async function runBrainTool(name: string, input: Record<string, any>): Promise<ToolResult> {
+/** Who is calling, so anything written records who produced it. */
+export type ToolContext = { agentKey?: string };
+
+export async function runBrainTool(
+  name: string,
+  input: Record<string, any>,
+  context: ToolContext = {},
+): Promise<ToolResult> {
   switch (name) {
     case "search_brain":
       return searchBrain(input);
@@ -284,7 +295,7 @@ export async function runBrainTool(name: string, input: Record<string, any>): Pr
     case "update_client_context":
       return updateClientContext(input);
     case "save_draft":
-      return saveDraft(input);
+      return saveDraft(input, context);
     case "create_task":
       return createTaskTool(input);
     default:
@@ -668,17 +679,25 @@ async function updateClientContext(input: any): Promise<ToolResult> {
   return { text: `Standing context updated for ${client.name}. Every specialist now sees this with every question about them.` };
 }
 
-async function saveDraft(input: any): Promise<ToolResult> {
+async function saveDraft(input: any, context: ToolContext): Promise<ToolResult> {
   const client = await resolveClient(input.client);
+
+  let projectId: string | null = null;
+  if (input.project) {
+    projectId = (await resolveProject(input.project))?.id ?? null;
+  }
 
   const [row] = await db
     .insert(documents)
     .values({
       clientId: client?.id ?? null,
+      projectId,
       title: input.title,
       body: input.body,
       kind: input.kind ?? "note",
-      source: "manual",
+      // Recorded as the team's work, not yours — the distinction is the point.
+      source: context.agentKey ? "agent" : "manual",
+      authorAgent: context.agentKey ?? null,
     })
     .returning();
 
