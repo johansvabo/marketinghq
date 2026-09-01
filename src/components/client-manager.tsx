@@ -48,7 +48,10 @@ export function ClientManager({ clients }: { clients: ClientInfo[] }) {
         engagement: String(formData.get("engagement") ?? "retainer"),
         color: String(formData.get("color") ?? PALETTE[0]),
         emailDomains: String(formData.get("emailDomains") ?? ""),
+        billingModel: String(formData.get("billingModel") ?? "retainer"),
+        currency: String(formData.get("currency") ?? "NOK"),
         monthlyValue: Number(formData.get("monthlyValue") ?? 0) || undefined,
+        hourlyRate: Number(formData.get("hourlyRate") ?? 0) || undefined,
       });
       if (!result.ok) {
         setError(result.error);
@@ -109,8 +112,28 @@ export function ClientManager({ clients }: { clients: ClientInfo[] }) {
               <p className="mt-1.5 text-[11.5px] text-muted">Mail and meetings from these domains get filed under this client automatically.</p>
             </div>
             <div>
-              <label className="label" htmlFor="monthlyValue">Monthly value</label>
+              <label className="label" htmlFor="currency">Currency</label>
+              <select id="currency" name="currency" className="input" defaultValue="NOK">
+                {["NOK", "SEK", "DKK", "EUR", "USD", "GBP"].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label" htmlFor="billingModel">They pay</label>
+              <select id="billingModel" name="billingModel" className="input" defaultValue="retainer">
+                <option value="retainer">A fixed amount</option>
+                <option value="hourly">By the hour</option>
+              </select>
+            </div>
+            <div>
+              <label className="label" htmlFor="monthlyValue">Per month</label>
               <input id="monthlyValue" name="monthlyValue" type="number" className="input" placeholder="45000" />
+            </div>
+            <div>
+              <label className="label" htmlFor="hourlyRate">Hourly rate</label>
+              <input id="hourlyRate" name="hourlyRate" type="number" className="input" placeholder="1500" />
+              <p className="mt-1.5 text-[11.5px] text-muted">Fill in whichever matches how they pay. You can change it later on the client page.</p>
             </div>
             <div className="sm:col-span-2">
               <span className="label">Colour</span>

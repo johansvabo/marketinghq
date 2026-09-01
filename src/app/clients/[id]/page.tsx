@@ -12,6 +12,10 @@ import { InsightRow } from "@/components/insight-row";
 import { DocumentList } from "@/components/document-list";
 import { TeamWork } from "@/components/team-work";
 import { ClientNotes } from "@/components/client-notes";
+import { PeopleCard } from "@/components/people-card";
+import { TimeTracker } from "@/components/time-tracker";
+import { ClientBilling } from "@/components/client-billing";
+import { clientEntries, clientMonth, formatMoney, monthKey } from "@/lib/billing";
 import { blobAccess, canDirectUpload, storageAvailable } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +30,8 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   if (!client) notFound();
 
   const storage = await storageAvailable();
+  const month = monthKey(new Date());
+  const [monthSummary, monthEntries] = await Promise.all([clientMonth(client, month), clientEntries(id, month)]);
 
   const [projectRows, openTasks, docs, clientInsights, people, upcomingReports, movement] = await Promise.all([
     db
@@ -79,16 +85,18 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
           <span className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full" style={{ background: client.color }} />
-              {client.engagement}
+              {/* "retainer" as an engagement next to hourly billing reads as a contradiction. */}
+              {client.billingModel === "hourly" && client.engagement === "retainer" ? "hourly" : client.engagement}
             </span>
-            {client.monthlyValue ? (
+            {monthSummary.basis !== "none" && (
               <>
                 <span>·</span>
                 <span>
-                  {client.currency} {client.monthlyValue.toLocaleString("en-US")}/mo
+                  {formatMoney(monthSummary.value, monthSummary.currency)}
+                  {monthSummary.basis === "hourly" ? " billed this month" : "/mo"}
                 </span>
               </>
-            ) : null}
+            )}
             {(client.emailDomains?.length ?? 0) > 0 && (
               <>
                 <span>·</span>
@@ -225,42 +233,17 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
         <div className="flex flex-col gap-3 rounded-[16px] p-3 md:p-3.5" style={{ background: "var(--sunken)" }}>
           <ClientNotes clientId={id} notes={client.notes} />
 
-          <Card>
-            <CardTitle action={<Link href="/settings" className="btn btn-ghost btn-sm">Edit</Link>}>
-              <span className="inline-flex items-center gap-1.5">
-                <Users size={12} />
-                People
-              </span>
-            </CardTitle>
-            {people.length === 0 ? (
-              <p className="text-[12.5px] leading-relaxed text-muted">
-                No one recorded. Adding them with a contact cadence is what turns “I should check in” into something the
-                system tells you.
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {people.map((person) => {
-                  const since = person.lastContactAt
-                    ? Math.floor((Date.now() - person.lastContactAt.getTime()) / 86_400_000)
-                    : null;
-                  const overdue = person.contactCadenceDays > 0 && (since === null || since > person.contactCadenceDays);
-                  return (
-                    <li key={person.id} className="flex items-center gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium">{person.name}</p>
-                        <p className="truncate text-[11.5px] text-muted">
-                          {person.role ?? "—"}
-                          {since !== null ? ` · spoke ${since}d ago` : person.contactCadenceDays > 0 ? " · never contacted" : ""}
-                        </p>
-                      </div>
-                      {overdue && <Chip tone="warn" solid>due</Chip>}
-                      {person.receivesReports && <Chip tone="brand">reports</Chip>}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Card>
+          <TimeTracker
+            clientId={id}
+            entries={monthEntries}
+            summary={monthSummary}
+            projects={projectRows.map((r) => ({ id: r.project.id, name: r.project.name }))}
+            month={month}
+          />
+
+          <PeopleCard clientId={id} people={people} />
+
+          <ClientBilling client={client} />
 
           {upcomingReports.length > 0 && (
             <Card>

@@ -426,3 +426,21 @@ input[type="radio"] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * Row controls that stay out of the way on a mouse but are always reachable
+ * on a touch screen. `group-hover` alone hides them forever on a phone, where
+ * no hover ever happens — which reads as a broken button.
+ */
+@utility row-actions {
+  transition: opacity 150ms ease;
+  @media (hover: hover) and (pointer: fine) {
+    opacity: 0;
+    &:focus-within {
+      opacity: 1;
+    }
+    .group:hover & {
+      opacity: 1;
+    }
+  }
+}

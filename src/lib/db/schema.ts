@@ -93,8 +93,16 @@ export const clients = sqliteTable("clients", {
   engagement: text("engagement").notNull().default("retainer"),
   status: text("status").notNull().default("active"), // active | paused | archived
   notes: text("notes"),
+  /*
+   * What the client is worth per month. Either a fixed retainer, or derived
+   * from tracked hours at an hourly rate — a consultancy usually has both
+   * kinds on the books at once, so the model carries both rather than forcing
+   * one shape.
+   */
+  billingModel: text("billing_model").notNull().default("retainer"), // retainer | hourly
   monthlyValue: real("monthly_value"),
-  currency: text("currency").notNull().default("DKK"),
+  hourlyRate: real("hourly_rate"),
+  currency: text("currency").notNull().default("NOK"),
   // domains used to attribute inbound email to this client
   emailDomains: text("email_domains", { mode: "json" }).$type<string[]>().default([]),
   createdAt: createdAt(),
@@ -186,6 +194,30 @@ export const stakeholders = sqliteTable(
   },
   (t) => [index("stakeholders_client").on(t.clientId)],
 );
+
+/**
+ * Hours worked, one row per client per day. Kept at day grain because that is
+ * how consulting time is actually remembered — nobody reconstructs start and
+ * stop times three days later, and pretending otherwise produces fiction.
+ */
+export const timeEntries = sqliteTable(
+  "time_entries",
+  {
+    id: id(),
+    clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    date: text("date").notNull(), // YYYY-MM-DD
+    hours: real("hours").notNull(),
+    note: text("note"),
+    /** Set false for work you are not charging for, so value stays honest. */
+    billable: integer("billable", { mode: "boolean" }).notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("time_client_date").on(t.clientId, t.date), index("time_date").on(t.date)],
+);
+
+export type TimeEntry = typeof timeEntries.$inferSelect;
 
 /* ------------------------------------------------------------ second brain */
 

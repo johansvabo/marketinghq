@@ -99,7 +99,7 @@ export function TaskRow({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+      <div className="flex shrink-0 items-center gap-0.5 row-actions">
         <button onClick={cycle} className="btn btn-ghost btn-sm" title="Cycle status: to do → doing → waiting">
           {task.status === "todo" ? "start" : task.status === "doing" ? "waiting" : "to do"}
         </button>

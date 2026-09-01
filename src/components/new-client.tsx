@@ -13,6 +13,7 @@ export function NewClientDialog({ label = "New client" }: { label?: string }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [billingModel, setBillingModel] = useState("retainer");
 
   function submit(formData: FormData) {
     setError(null);
@@ -22,7 +23,10 @@ export function NewClientDialog({ label = "New client" }: { label?: string }) {
         engagement: String(formData.get("engagement") ?? "retainer"),
         color: String(formData.get("color") ?? PALETTE[0]),
         emailDomains: String(formData.get("emailDomains") ?? ""),
+        billingModel,
+        currency: String(formData.get("currency") ?? "NOK"),
         monthlyValue: Number(formData.get("monthlyValue") ?? 0) || undefined,
+        hourlyRate: Number(formData.get("hourlyRate") ?? 0) || undefined,
         notes: String(formData.get("notes") ?? ""),
       });
       if (!result.ok) {
@@ -65,9 +69,40 @@ export function NewClientDialog({ label = "New client" }: { label?: string }) {
               </select>
             </div>
             <div>
-              <label className="label" htmlFor="monthlyValue">Monthly value</label>
-              <input id="monthlyValue" name="monthlyValue" type="number" className="input" placeholder="optional" />
+              <label className="label" htmlFor="currency">Currency</label>
+              <select id="currency" name="currency" className="input" defaultValue="NOK">
+                {["NOK", "SEK", "DKK", "EUR", "USD", "GBP"].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label" htmlFor="billingModel">They pay</label>
+              <select
+                id="billingModel"
+                name="billingModel"
+                className="input"
+                value={billingModel}
+                onChange={(e) => setBillingModel(e.target.value)}
+              >
+                <option value="retainer">A fixed amount</option>
+                <option value="hourly">By the hour</option>
+              </select>
+            </div>
+            {billingModel === "hourly" ? (
+              <div>
+                <label className="label" htmlFor="hourlyRate">Hourly rate</label>
+                <input id="hourlyRate" name="hourlyRate" type="number" className="input" placeholder="1500" />
+              </div>
+            ) : (
+              <div>
+                <label className="label" htmlFor="monthlyValue">Per month</label>
+                <input id="monthlyValue" name="monthlyValue" type="number" className="input" placeholder="optional" />
+              </div>
+            )}
           </div>
 
           <div>

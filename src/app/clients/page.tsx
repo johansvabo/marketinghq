@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { clients, documents, insights, projects, stakeholders, tasks } from "@/lib/db/schema";
 import { Card, ClientBadge, Empty, PageHeader } from "@/components/ui";
 import { NewClientDialog } from "@/components/new-client";
+import { formatMoney, monthByClient } from "@/lib/billing";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clients" };
@@ -32,6 +33,8 @@ export default async function ClientsPage() {
     })
     .from(clients)
     .orderBy(asc(clients.status), asc(clients.name));
+
+  const months = await monthByClient(rows.map((r) => r.client));
 
   const active = rows.filter((r) => r.client.status === "active");
   const rest = rows.filter((r) => r.client.status !== "active");
@@ -80,11 +83,16 @@ export default async function ClientsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-[15px] font-semibold tracking-[-0.01em]">{client.name}</h3>
                         <span className="chip">{ENGAGEMENT_LABEL[client.engagement] ?? client.engagement}</span>
-                        {client.monthlyValue ? (
-                          <span className="ml-auto text-[12px] text-muted">
-                            {client.currency} {client.monthlyValue.toLocaleString("en-US")}/mo
-                          </span>
-                        ) : null}
+                        {(() => {
+                          const m = months.get(client.id);
+                          if (!m || m.basis === "none") return null;
+                          return (
+                            <span className="ml-auto text-[12px] text-muted">
+                              {formatMoney(m.value, m.currency)}
+                              {m.basis === "hourly" ? " this month" : "/mo"}
+                            </span>
+                          );
+                        })()}
                       </div>
 
                       {client.notes && (

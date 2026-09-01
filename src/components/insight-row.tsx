@@ -53,7 +53,7 @@ export function InsightRow({
           <span className="opacity-30">{"●".repeat(5 - insight.confidence)}</span>
         </span>
 
-        <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <div className="ml-auto flex items-center gap-0.5 row-actions">
           <button
             onClick={() => startTransition(async () => { await togglePinInsight(insight.id); router.refresh(); })}
             className="btn btn-ghost btn-sm"

@@ -16,6 +16,7 @@ import {
   signals,
   stakeholders,
   tasks,
+  timeEntries,
   type DataAccount,
 } from "@/lib/db/schema";
 import { addDays } from "@/lib/dates";
@@ -272,7 +273,7 @@ export async function deleteInsight(insightId: string) {
 
 /* --------------------------------------------------------- clients & work */
 
-export async function createClient(input: { name: string; engagement?: string; color?: string; emailDomains?: string; monthlyValue?: number; notes?: string }) {
+export async function createClient(input: { name: string; engagement?: string; color?: string; emailDomains?: string; monthlyValue?: number; hourlyRate?: number; billingModel?: string; currency?: string; notes?: string }) {
   if (!input.name?.trim()) return { ok: false as const, error: "A client needs a name." };
 
   const slug = input.name
@@ -289,6 +290,9 @@ export async function createClient(input: { name: string; engagement?: string; c
       engagement: input.engagement ?? "retainer",
       color: input.color ?? "#6366f1",
       monthlyValue: input.monthlyValue ?? null,
+      hourlyRate: input.hourlyRate ?? null,
+      billingModel: input.billingModel === "hourly" ? "hourly" : "retainer",
+      currency: input.currency || "NOK",
       notes: input.notes?.trim() || null,
       emailDomains: (input.emailDomains ?? "")
         .split(",")
@@ -619,7 +623,18 @@ export async function deleteDocument(documentId: string) {
 
 export async function updateClient(
   clientId: string,
-  patch: { name?: string; engagement?: string; status?: string; notes?: string; emailDomains?: string; monthlyValue?: number | null; color?: string },
+  patch: {
+    name?: string;
+    engagement?: string;
+    status?: string;
+    notes?: string;
+    emailDomains?: string;
+    monthlyValue?: number | null;
+    hourlyRate?: number | null;
+    billingModel?: string;
+    currency?: string;
+    color?: string;
+  },
 ) {
   await db
     .update(clients)
@@ -630,6 +645,9 @@ export async function updateClient(
       ...(patch.notes !== undefined ? { notes: patch.notes.trim() || null } : {}),
       ...(patch.color !== undefined ? { color: patch.color } : {}),
       ...(patch.monthlyValue !== undefined ? { monthlyValue: patch.monthlyValue } : {}),
+      ...(patch.hourlyRate !== undefined ? { hourlyRate: patch.hourlyRate } : {}),
+      ...(patch.billingModel !== undefined ? { billingModel: patch.billingModel } : {}),
+      ...(patch.currency !== undefined ? { currency: patch.currency } : {}),
       ...(patch.emailDomains !== undefined
         ? {
             emailDomains: patch.emailDomains
@@ -744,5 +762,95 @@ export async function setDocumentProject(documentId: string, projectId: string |
   const [row] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
   await db.update(documents).set({ projectId: projectId || null }).where(eq(documents.id, documentId));
   refresh("/clients", `/clients/${row?.clientId ?? ""}`);
+  return { ok: true as const };
+}
+
+/* ------------------------------------------------------------ time tracking */
+
+export async function logTime(input: {
+  clientId: string;
+  date: string;
+  hours: number;
+  note?: string;
+  projectId?: string | null;
+  billable?: boolean;
+}) {
+  if (!input.clientId) return { ok: false as const, error: "Pick a client." };
+  if (!(input.hours > 0)) return { ok: false as const, error: "Hours must be more than zero." };
+  if (input.hours > 24) return { ok: false as const, error: "That is more than a day." };
+
+  const [row] = await db
+    .insert(timeEntries)
+    .values({
+      clientId: input.clientId,
+      projectId: input.projectId || null,
+      date: input.date,
+      hours: input.hours,
+      note: input.note?.trim() || null,
+      billable: input.billable ?? true,
+    })
+    .returning();
+
+  refresh("/clients", `/clients/${input.clientId}`, "/time");
+  return { ok: true as const, id: row.id };
+}
+
+export async function updateTimeEntry(
+  entryId: string,
+  patch: { hours?: number; note?: string; date?: string; billable?: boolean; projectId?: string | null },
+) {
+  const [row] = await db.select().from(timeEntries).where(eq(timeEntries.id, entryId)).limit(1);
+  if (!row) return { ok: false as const, error: "Not found." };
+
+  await db
+    .update(timeEntries)
+    .set({
+      ...(patch.hours !== undefined ? { hours: Math.min(Math.max(patch.hours, 0.25), 24) } : {}),
+      ...(patch.note !== undefined ? { note: patch.note.trim() || null } : {}),
+      ...(patch.date !== undefined ? { date: patch.date } : {}),
+      ...(patch.billable !== undefined ? { billable: patch.billable } : {}),
+      ...(patch.projectId !== undefined ? { projectId: patch.projectId } : {}),
+    })
+    .where(eq(timeEntries.id, entryId));
+
+  refresh("/clients", `/clients/${row.clientId}`, "/time");
+  return { ok: true as const };
+}
+
+export async function deleteTimeEntry(entryId: string) {
+  const [row] = await db.select().from(timeEntries).where(eq(timeEntries.id, entryId)).limit(1);
+  await db.delete(timeEntries).where(eq(timeEntries.id, entryId));
+  refresh("/clients", `/clients/${row?.clientId ?? ""}`, "/time");
+  return { ok: true as const };
+}
+
+/* ---------------------------------------------------------------- people */
+
+export async function updateStakeholder(
+  stakeholderId: string,
+  patch: { name?: string; role?: string; email?: string; contactCadenceDays?: number; receivesReports?: boolean },
+) {
+  const [row] = await db.select().from(stakeholders).where(eq(stakeholders.id, stakeholderId)).limit(1);
+  if (!row) return { ok: false as const, error: "Not found." };
+
+  await db
+    .update(stakeholders)
+    .set({
+      ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+      ...(patch.role !== undefined ? { role: patch.role.trim() || null } : {}),
+      ...(patch.email !== undefined ? { email: patch.email.trim().toLowerCase() || null } : {}),
+      ...(patch.contactCadenceDays !== undefined ? { contactCadenceDays: Math.max(0, Math.round(patch.contactCadenceDays)) } : {}),
+      ...(patch.receivesReports !== undefined ? { receivesReports: patch.receivesReports } : {}),
+    })
+    .where(eq(stakeholders.id, stakeholderId));
+
+  refresh("/clients", `/clients/${row.clientId ?? ""}`, "/settings");
+  return { ok: true as const };
+}
+
+export async function deleteStakeholder(stakeholderId: string) {
+  const [row] = await db.select().from(stakeholders).where(eq(stakeholders.id, stakeholderId)).limit(1);
+  await db.delete(stakeholders).where(eq(stakeholders.id, stakeholderId));
+  refresh("/clients", `/clients/${row?.clientId ?? ""}`, "/settings");
   return { ok: true as const };
 }

@@ -50,6 +50,7 @@ export function DocumentList({
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -85,9 +86,33 @@ export function DocumentList({
     });
   }
 
+  /*
+   * One line per document, grouped by kind. A stack of full-height cards buries
+   * a client's material under its own scroll — the folder is for finding
+   * something, and the content is one click away when you want it.
+   */
+  const groups = new Map<string, Document[]>();
+  for (const doc of documents) {
+    if (!groups.has(doc.kind)) groups.set(doc.kind, []);
+    groups.get(doc.kind)!.push(doc);
+  }
+  const orderedGroups = KINDS.map((k) => [k.value, groups.get(k.value) ?? []] as const).filter(([, d]) => d.length > 0);
+
   return (
     <div className="flex flex-col gap-2.5">
-      <DocumentUpload clientId={clientId} storageOn={storageOn} canDirect={canDirect} access={access} />
+      {showUpload ? (
+        <DocumentUpload clientId={clientId} storageOn={storageOn} canDirect={canDirect} access={access} />
+      ) : (
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowUpload(true)} className="btn btn-sm btn-primary">
+            <Plus size={14} />
+            Add documents
+          </button>
+          <span className="text-[11.5px] text-muted">
+            {documents.length} file{documents.length === 1 ? "" : "s"}
+          </span>
+        </div>
+      )}
 
       {!storageOn && documents.some((d) => d.fileName && !d.fileUrl) && (
         <p className="text-[11.5px] leading-relaxed text-muted">
@@ -136,123 +161,123 @@ export function DocumentList({
         </Card>
       )}
 
-      {documents.map((doc) => {
-        const isEditing = editingId === doc.id;
-        const isOpen = openId === doc.id;
+      {orderedGroups.map(([kind, docs]) => (
+        <section key={kind}>
+          <div className="mb-1 flex items-center gap-2 px-1">
+            <h4 className="section-title">{KINDS.find((k) => k.value === kind)?.label ?? kind}</h4>
+            <span className="text-[11px] text-muted">{docs.length}</span>
+          </div>
 
-        return (
-          <Card key={doc.id} className={clsx(pending && "opacity-70")}>
-            {isEditing ? (
-              <form action={(fd) => save(doc.id, fd)} className="flex flex-col gap-3">
-                <div className="flex flex-wrap gap-2">
-                  <input name="title" defaultValue={doc.title} className="input flex-1 min-w-[200px]" required />
-                  <select name="kind" className="input w-auto" defaultValue={doc.kind}>
-                    {KINDS.map((k) => (
-                      <option key={k.value} value={k.value}>{k.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <textarea name="body" defaultValue={doc.body} rows={18} className="input font-[inherit] text-[13px] leading-relaxed" />
-                <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setEditingId(null)} className="btn">Cancel</button>
-                  <button type="submit" disabled={pending} className="btn btn-primary">Save</button>
-                </div>
-              </form>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-center gap-2">
-                  {doc.fileType?.startsWith("image/") ? (
-                    <ImageIcon size={14} className="shrink-0 text-[var(--ink-muted)]" />
-                  ) : (
-                    <FileText size={14} className="shrink-0 text-[var(--ink-muted)]" />
-                  )}
-                  <button
-                    onClick={() => setOpenId(isOpen ? null : doc.id)}
-                    className="text-left text-[14px] font-semibold tracking-[-0.01em] hover:underline"
-                  >
-                    {doc.title}
-                  </button>
-                  <Chip tone={KIND_TONE[doc.kind] ?? "neutral"} solid>{doc.kind}</Chip>
-                  {doc.pinned && <Chip tone="brand">pinned</Chip>}
+          <div className="card overflow-hidden">
+            {docs.map((doc, index) => {
+              const isEditing = editingId === doc.id;
+              const isOpen = openId === doc.id;
 
-                  <div className="ml-auto flex items-center gap-0.5">
-                    {doc.filePathname && (
-                      <a
-                        href={`/api/documents/${doc.id}/file`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-ghost btn-sm"
-                        title={`Open ${doc.fileName ?? "the original file"}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Download size={13} />
-                      </a>
+              if (isEditing) {
+                return (
+                  <div key={doc.id} className={clsx("p-3.5", index > 0 && "border-t")}>
+                    <form action={(fd) => save(doc.id, fd)} className="flex flex-col gap-3">
+                      <div className="flex flex-wrap gap-2">
+                        <input name="title" defaultValue={doc.title} className="input flex-1 min-w-[200px]" required />
+                        <select name="kind" className="input w-auto" defaultValue={doc.kind}>
+                          {KINDS.map((k) => (
+                            <option key={k.value} value={k.value}>{k.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <textarea name="body" defaultValue={doc.body} rows={16} className="input font-[inherit] text-[13px] leading-relaxed" />
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => setEditingId(null)} className="btn">Cancel</button>
+                        <button type="submit" disabled={pending} className="btn btn-primary">Save</button>
+                      </div>
+                    </form>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={doc.id} className={clsx(index > 0 && "border-t")}>
+                  <div className="group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-[var(--raised)]">
+                    {doc.fileType?.startsWith("image/") ? (
+                      <ImageIcon size={13} className="shrink-0 text-[var(--ink-muted)]" />
+                    ) : (
+                      <FileText size={13} className="shrink-0 text-[var(--ink-muted)]" />
                     )}
-                    <span className="mr-1 text-[11px] text-muted">
+
+                    <button
+                      onClick={() => setOpenId(isOpen ? null : doc.id)}
+                      className="min-w-0 flex-1 truncate text-left text-[13px] font-medium hover:underline"
+                      title={doc.title}
+                    >
+                      {doc.title}
+                    </button>
+
+                    {doc.pinned && <Pin size={11} style={{ color: "var(--color-brand)" }} fill="currentColor" />}
+
+                    <span className="hidden shrink-0 text-[11px] text-muted sm:inline">
+                      {doc.fileSize ? `${Math.round(doc.fileSize / 1024)} KB · ` : ""}
                       {doc.updatedAt.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                     </span>
-                    <button
-                      onClick={() => startTransition(async () => { await toggleDocumentPin(doc.id); router.refresh(); })}
-                      className="btn btn-ghost btn-sm"
-                      title={doc.pinned ? "Unpin" : "Pin to the top"}
-                      style={doc.pinned ? { color: "var(--color-brand)" } : undefined}
-                    >
-                      <Pin size={13} fill={doc.pinned ? "currentColor" : "none"} />
-                    </button>
-                    <button onClick={() => { setEditingId(doc.id); setOpenId(doc.id); }} className="btn btn-ghost btn-sm">
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!confirm(`Delete “${doc.title}”? This cannot be undone.`)) return;
-                        startTransition(async () => { await deleteDocument(doc.id); router.refresh(); });
-                      }}
-                      className="btn btn-ghost btn-sm"
-                      title="Delete"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+
+                    <div className="flex shrink-0 items-center gap-0.5 row-actions">
+                      {doc.filePathname && (
+                        <a
+                          href={`/api/documents/${doc.id}/file`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-ghost btn-sm"
+                          title={`Open ${doc.fileName ?? "the original"}`}
+                        >
+                          <Download size={12} />
+                        </a>
+                      )}
+                      <button
+                        onClick={() => startTransition(async () => { await toggleDocumentPin(doc.id); router.refresh(); })}
+                        className="btn btn-ghost btn-sm"
+                        title={doc.pinned ? "Unpin" : "Pin"}
+                      >
+                        <Pin size={12} fill={doc.pinned ? "currentColor" : "none"} />
+                      </button>
+                      <button onClick={() => { setEditingId(doc.id); setOpenId(doc.id); }} className="btn btn-ghost btn-sm">
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!confirm(`Delete “${doc.title}”? This cannot be undone.`)) return;
+                          startTransition(async () => { await deleteDocument(doc.id); router.refresh(); });
+                        }}
+                        className="btn btn-ghost btn-sm"
+                        title="Delete"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
                   </div>
+
+                  {isOpen && (
+                    <div className="border-t px-3.5 py-3">
+                      {doc.extractionNote && (
+                        <p className="mb-2 text-[11.5px] leading-relaxed" style={{ color: "var(--color-warn)" }}>
+                          {doc.extractionNote}
+                        </p>
+                      )}
+                      {doc.body.trim() ? (
+                        <Markdown source={doc.body} />
+                      ) : (
+                        <p className="text-[12.5px] text-muted">Nothing readable in this one — open the original above.</p>
+                      )}
+                      <button onClick={() => setOpenId(null)} className="btn btn-ghost btn-sm mt-3 -ml-2">
+                        <X size={13} />
+                        Close
+                      </button>
+                    </div>
+                  )}
                 </div>
-
-                {doc.fileName && (
-                  <p className="mt-1 text-[11.5px] text-muted">
-                    {doc.fileName}
-                    {doc.fileSize ? ` · ${(doc.fileSize / 1024).toFixed(0)} KB` : ""}
-                    {doc.fileUrl ? "" : " · original not kept"}
-                  </p>
-                )}
-
-                {doc.extractionNote && (
-                  <p className="mt-1.5 text-[11.5px] leading-relaxed" style={{ color: "var(--color-warn)" }}>
-                    {doc.extractionNote}
-                  </p>
-                )}
-
-                {isOpen ? (
-                  <div className="mt-3 border-t pt-3">
-                    {doc.body.trim() ? (
-                      <Markdown source={doc.body} />
-                    ) : (
-                      <p className="text-[12.5px] text-muted">This document is empty. Hit Edit to write it.</p>
-                    )}
-                    <button onClick={() => setOpenId(null)} className="btn btn-ghost btn-sm mt-3 -ml-2">
-                      <X size={13} />
-                      Close
-                    </button>
-                  </div>
-                ) : (
-                  doc.body.trim() && (
-                    <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-relaxed text-muted">
-                      {doc.body.replace(/[#*`>_-]/g, " ").replace(/\s+/g, " ").slice(0, 220)}
-                    </p>
-                  )
-                )}
-              </>
-            )}
-          </Card>
-        );
-      })}
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
