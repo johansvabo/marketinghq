@@ -1,13 +1,14 @@
 import { db } from "@/lib/db";
 import { calendarEvents, messages, type Connection } from "@/lib/db/schema";
 import { addDays, subDays } from "@/lib/dates";
+import { zonedToUtc } from "@/lib/timezone";
 import { accessTokenFor } from "./oauth";
 import { ClientMatcher, GENERIC_DOMAINS } from "./attribution";
 
-async function graph<T>(connection: Connection, path: string): Promise<T> {
+async function graph<T>(connection: Connection, path: string, extraHeaders: Record<string, string> = {}): Promise<T> {
   const token = await accessTokenFor(connection);
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
-    headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+    headers: { authorization: `Bearer ${token}`, accept: "application/json", ...extraHeaders },
   });
   if (!res.ok) throw new Error(`Microsoft Graph ${res.status} on ${path.split("?")[0]}: ${(await res.text()).slice(0, 400)}`);
   return res.json() as Promise<T>;
@@ -107,6 +108,9 @@ export async function syncOutlookCalendar(connection: Connection, opts: { past?:
   const data = await graph<{ value: GraphEvent[] }>(
     connection,
     `/me/calendarView?startDateTime=${start}&endDateTime=${end}&$top=250&$orderby=start/dateTime&$select=id,subject,bodyPreview,location,isAllDay,isCancelled,start,end,organizer,attendees`,
+    // Without this, Graph answers in the mailbox's own timezone and every
+    // meeting lands an hour or two out.
+    { Prefer: 'outlook.timezone="UTC"' },
   );
 
   let written = 0;
@@ -125,9 +129,10 @@ export async function syncOutlookCalendar(connection: Connection, opts: { past?:
 
     const client = matcher.match({ emails: attendees.map((a) => a.email), text: item.subject });
 
-    // Graph returns naive local times with a separate zone; treat them as UTC-marked ISO.
-    const startsAt = new Date(`${item.start.dateTime}Z`);
-    const endsAt = new Date(`${item.end.dateTime}Z`);
+    // We ask for UTC above, but honour whatever zone comes back rather than
+    // assuming: the naive string alone carries no offset.
+    const startsAt = zonedToUtc(item.start.dateTime, item.start.timeZone);
+    const endsAt = zonedToUtc(item.end.dateTime, item.end.timeZone);
 
     await db
       .insert(calendarEvents)

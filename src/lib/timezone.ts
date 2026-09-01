@@ -67,3 +67,40 @@ export function lastOccurrence(
 
   return null;
 }
+
+/**
+ * Converts a wall-clock time in a named zone to a real instant.
+ *
+ * Microsoft Graph returns calendar times as a naive "2026-09-24T13:00:00" plus
+ * a separate timeZone field, and the zone is the mailbox's own unless you ask
+ * for otherwise. Treating that string as UTC puts every Norwegian meeting one
+ * or two hours out — wrong in a way that looks entirely plausible.
+ */
+export function zonedToUtc(naive: string, timeZone: string): Date {
+  // Read it as if it were UTC, then measure how far that lands from the real
+  // wall clock in the target zone, and correct by the difference.
+  const asUtc = new Date(`${naive.replace(/Z$/, "")}Z`);
+  if (Number.isNaN(asUtc.getTime())) return new Date(naive);
+  if (!timeZone || /^utc$/i.test(timeZone)) return asUtc;
+
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).formatToParts(asUtc);
+
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+    const wallClock = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
+
+    return new Date(asUtc.getTime() - (wallClock - asUtc.getTime()));
+  } catch {
+    // An unrecognised zone name is better treated as UTC than crashed on.
+    return asUtc;
+  }
+}

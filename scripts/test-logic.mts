@@ -13,6 +13,7 @@ import {
 import { nextDueDate, reportingPeriod, materializeReportRuns } from "../src/lib/reporting/schedule";
 import { runProactiveEngine } from "../src/lib/proactive/engine";
 import { compare, totalsFor, withDerived } from "../src/lib/metrics";
+import { zonedToUtc } from "../src/lib/timezone";
 
 await ensureSchema();
 for (const t of [signals, documents, insights, metrics, reportRuns, reportSchedules, stakeholders, tasks, projects, clients]) {
@@ -24,6 +25,12 @@ const check = (label: string, ok: boolean, detail = "") => {
   if (!ok) fail++;
   console.log(`  ${ok ? "PASS" : "FAIL"}  ${label}${detail ? ` — ${detail}` : ""}`);
 };
+
+/* --------------------------------------------- calendar times from Graph */
+console.log("Calendar times");
+check("Oslo 13:00 in summer is 11:00 UTC", zonedToUtc("2026-09-24T13:00:00", "Europe/Oslo").toISOString() === "2026-09-24T11:00:00.000Z");
+check("Oslo 13:00 in winter is 12:00 UTC", zonedToUtc("2026-12-10T13:00:00", "Europe/Oslo").toISOString() === "2026-12-10T12:00:00.000Z");
+check("a UTC time is left alone", zonedToUtc("2026-09-24T13:00:00", "UTC").toISOString() === "2026-09-24T13:00:00.000Z");
 
 /* ---------------------------------------------- report cadence arithmetic */
 console.log("Report cadences");
