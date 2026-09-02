@@ -2,7 +2,7 @@ import Link from "next/link";
 import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { Plus, Upload } from "lucide-react";
 import { db } from "@/lib/db";
-import { chatMessages, chatThreads, clients, insights } from "@/lib/db/schema";
+import { chatMessages, chatThreads, clients, insights, projects } from "@/lib/db/schema";
 import { isConfigured } from "@/lib/env";
 import { iso, relativeDay } from "@/lib/dates";
 import { Card, Chip, ClientDot, Empty, PageHeader } from "@/components/ui";
@@ -28,16 +28,18 @@ export default async function BrainPage({
 
   if (tab === "library") return <Library params={params} />;
 
-  const [threads, history] = await Promise.all([
+  const [threads, history, clientRows, projectRows] = await Promise.all([
     db.select().from(chatThreads).orderBy(desc(chatThreads.updatedAt)).limit(12),
     params.thread
       ? db.select().from(chatMessages).where(eq(chatMessages.threadId, params.thread)).orderBy(chatMessages.createdAt)
       : Promise.resolve([]),
+    db.select({ id: clients.id, name: clients.name }).from(clients).where(eq(clients.status, "active")).orderBy(clients.name),
+    db.select({ id: projects.id, name: projects.name, clientId: projects.clientId }).from(projects).orderBy(projects.name),
   ]);
 
   return (
     <>
-      <PageHeader title="Brain" subtitle="Ask your own record. It reads your work, not the web." actions={<Tabs tab={tab} />} />
+      <PageHeader title="Brain" subtitle="Sees every client at once. Ask across all of them, or hand it notes to file." actions={<Tabs tab={tab} />} />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_230px]">
         <BrainChat
@@ -46,6 +48,7 @@ export default async function BrainPage({
           threadId={params.thread}
           suggestions={SUGGESTIONS}
           aiReady={isConfigured.anthropic()}
+          saveTargets={{ clients: clientRows, projects: projectRows }}
         />
 
         <aside className="hidden flex-col gap-2 lg:flex">

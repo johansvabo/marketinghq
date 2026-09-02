@@ -35,7 +35,7 @@ export default async function TeamPage() {
     <>
       <PageHeader
         title="Team"
-        subtitle="Specialists who read the same clients, documents and numbers you do — and disagree with you when they should"
+        subtitle="One discipline each, and the live web. For work the Brain would only do a thinner version of"
       />
 
       {!isConfigured.anthropic() && (

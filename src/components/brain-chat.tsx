@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowUp, Loader2, Sparkles, Square } from "lucide-react";
 import { Markdown } from "./markdown";
+import { SaveAnswer, type SaveTarget } from "./save-answer";
 
 type ChatMessage = { role: "user" | "assistant"; content: string; tools?: string[] };
 
@@ -28,6 +30,7 @@ export function BrainChat({
   placeholder,
   emptyTitle,
   emptyHint,
+  saveTargets,
 }: {
   initial: ChatMessage[];
   threadId?: string;
@@ -38,6 +41,8 @@ export function BrainChat({
   placeholder?: string;
   emptyTitle?: string;
   emptyHint?: string;
+  /** Clients and projects an answer can be filed under. */
+  saveTargets?: SaveTarget;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>(initial);
@@ -142,8 +147,14 @@ export function BrainChat({
               <h2 className="text-[17px] font-semibold tracking-tight">{emptyTitle ?? "Ask your own record"}</h2>
               <p className="max-w-[46ch] text-[13px] leading-relaxed text-muted">
                 {emptyHint ??
-                  "This reads your real tasks, projects, captured insights and connected marketing data — not the open web. The more you put in, the better it gets."}
+                  "The one that sees everything at once — every client, all your captured thinking, your numbers and your calendar. Ask it across clients, hand it meeting notes to file, or work out what deserves your day."}
               </p>
+              {!emptyHint && (
+                <p className="max-w-[46ch] text-[12px] leading-relaxed text-muted">
+                  For work inside one discipline — a post, a search plan, a competitor read, a tender window —{" "}
+                  <Link href="/team" className="underline">the team</Link> goes deeper and can search the live web.
+                </p>
+              )}
             </div>
             <div className="flex w-full max-w-[560px] flex-col gap-1.5">
               {suggestions.map((suggestion) => (
@@ -179,7 +190,15 @@ export function BrainChat({
                       </div>
                     )}
                     {message.content ? (
-                      <Markdown source={message.content} />
+                      <>
+                        <Markdown source={message.content} />
+                        {/* On every finished answer — never on the one still streaming. */}
+                        {saveTargets && !(busy && index === messages.length - 1) && (
+                          <div className="mt-2">
+                            <SaveAnswer body={message.content} targets={saveTargets} />
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div className="flex items-center gap-2 text-[13px] text-muted">
                         <Loader2 size={14} className="animate-spin" />

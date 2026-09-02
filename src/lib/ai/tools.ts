@@ -135,7 +135,7 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
   {
     name: "save_draft",
     description:
-      "Save a piece of work into the client's documents — a drafted post, a content plan, a competitor briefing, a review. Use this when you have produced something the user will want back later, or when they ask you to save it. Do not save conversational answers.",
+      "Save a piece of work into the client's documents — a drafted post, a content plan, a competitor briefing, a review. ONLY call this when the user has asked for the work to be saved, filed or kept. If they simply asked you to write or plan something, put it in your reply and offer to file it instead; an unasked-for document is clutter they have to clean up. Never save a conversational answer.",
     input_schema: {
       type: "object",
       properties: {

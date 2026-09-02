@@ -210,7 +210,7 @@ export async function processPending(
 /** The reviewer needs this cycle's other briefings; everyone else needs the brief. */
 async function buildPrompt(agentKey: AgentKey, clientName: string, slotKey: string): Promise<string> {
   const agent = AGENTS[agentKey];
-  const base = `This is your scheduled briefing for **${clientName}**.\n\nStart by reading everything the system holds on them — their standing context, documents, captured insights, open work and numbers. Then:\n\n${agent.briefing}`;
+  const base = `This is your scheduled briefing for **${clientName}**.\n\nStart by reading everything the system holds on them — their standing context, documents, captured insights, open work and numbers. Then:\n\n${agent.briefing}\n\n---\n\nThis is scheduled work, so file it: save the finished piece as a document under this client with save_draft, and put it under the right project if one fits. Then give a short summary here of what you produced and why.`;
 
   if (!agent.runsLast) return base;
 
