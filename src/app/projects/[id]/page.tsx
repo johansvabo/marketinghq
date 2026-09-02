@@ -3,13 +3,15 @@ import Link from "next/link";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
-import { clients, insights, milestones, projects, stakeholders, tasks } from "@/lib/db/schema";
+import { clients, documents, insights, milestones, projects, stakeholders, tasks } from "@/lib/db/schema";
 import { format, iso, relativeDay } from "@/lib/dates";
 import { Card, CardTitle, Chip, ClientDot, Empty, PageHeader, Progress } from "@/components/ui";
 import { TaskList } from "@/components/tasks";
 import { QuickAdd } from "@/components/quick-add";
 import { ProjectControls } from "@/components/project-controls";
 import { Timeline } from "@/components/timeline";
+import { DocumentList } from "@/components/document-list";
+import { blobAccess, canDirectUpload, storageAvailable } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +30,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   if (!row) notFound();
   const { project, client } = row;
 
-  const [openTasks, doneTasks, milestoneRows, projectInsights, people, clientOptions, projectOptions] = await Promise.all([
+  const [openTasks, doneTasks, milestoneRows, projectInsights, people, clientOptions, projectOptions, projectDocs, siblingProjects, storage] =
+    await Promise.all([
     db
       .select({ task: tasks })
       .from(tasks)
@@ -45,6 +48,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     client ? db.select().from(stakeholders).where(eq(stakeholders.clientId, client.id)) : Promise.resolve([]),
     db.select({ id: clients.id, name: clients.name }).from(clients),
     db.select({ id: projects.id, name: projects.name }).from(projects),
+    db.select().from(documents).where(eq(documents.projectId, id)).orderBy(desc(documents.pinned), desc(documents.updatedAt)),
+    // Where else a document from this project could be filed.
+    client
+      ? db.select({ id: projects.id, name: projects.name }).from(projects).where(eq(projects.clientId, client.id))
+      : Promise.resolve([]),
+    storageAvailable(),
   ]);
 
   return (
@@ -119,6 +128,27 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                   <TaskList items={doneTasks.map((t) => ({ task: t.task }))} emptyText="" showMeta={false} showDue={false} />
                 </div>
               </details>
+            )}
+          </Card>
+
+          <Card>
+            <CardTitle action={<span className="text-[11.5px] text-muted">{projectDocs.length || ""}</span>}>
+              Documents
+            </CardTitle>
+            {client ? (
+              <DocumentList
+                clientId={client.id}
+                projectId={project.id}
+                projects={siblingProjects}
+                documents={projectDocs}
+                storageOn={storage.ok}
+                canDirect={canDirectUpload()}
+                access={blobAccess()}
+              />
+            ) : (
+              <p className="text-[12.5px] text-muted">
+                Give this project a client and you can keep its drafts and deliverables here.
+              </p>
             )}
           </Card>
 

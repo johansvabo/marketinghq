@@ -31,7 +31,8 @@ import { AGENTS, type AgentKey } from "@/lib/ai/agents";
 import { planCycle as planCycleNow, processPending, saveBriefingConfig } from "@/lib/ai/briefings";
 
 function refresh(...paths: string[]) {
-  for (const path of ["/", ...paths]) revalidatePath(path);
+  // Callers interpolate ids that may be null, which leaves a bare "/projects/".
+  for (const path of ["/", ...paths]) if (!path.endsWith("/") || path === "/") revalidatePath(path);
 }
 
 /* ------------------------------------------------------------------- tasks */
@@ -579,7 +580,7 @@ export async function createDocument(input: {
     })
     .returning();
 
-  refresh("/clients", `/clients/${input.clientId ?? ""}`);
+  refresh("/clients", `/clients/${input.clientId ?? ""}`, `/projects/${input.projectId ?? ""}`);
   return { ok: true as const, id: row.id };
 }
 
@@ -587,7 +588,11 @@ export async function updateDocument(
   documentId: string,
   patch: { title?: string; body?: string; kind?: string; tags?: string[]; projectId?: string | null },
 ) {
-  const [row] = await db.select({ clientId: documents.clientId }).from(documents).where(eq(documents.id, documentId)).limit(1);
+  const [row] = await db
+    .select({ clientId: documents.clientId, projectId: documents.projectId })
+    .from(documents)
+    .where(eq(documents.id, documentId))
+    .limit(1);
 
   await db
     .update(documents)
@@ -600,7 +605,7 @@ export async function updateDocument(
     })
     .where(eq(documents.id, documentId));
 
-  refresh("/clients", `/clients/${row?.clientId ?? ""}`, `/documents/${documentId}`);
+  refresh("/clients", `/clients/${row?.clientId ?? ""}`, `/projects/${row?.projectId ?? ""}`, `/documents/${documentId}`);
   return { ok: true as const };
 }
 
@@ -608,7 +613,7 @@ export async function toggleDocumentPin(documentId: string) {
   const [row] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
   if (!row) return { ok: false as const, error: "Not found." };
   await db.update(documents).set({ pinned: !row.pinned }).where(eq(documents.id, documentId));
-  refresh("/clients", `/clients/${row.clientId ?? ""}`);
+  refresh("/clients", `/clients/${row.clientId ?? ""}`, `/projects/${row.projectId ?? ""}`);
   return { ok: true as const };
 }
 
@@ -617,7 +622,7 @@ export async function deleteDocument(documentId: string) {
   // Remove the stored original too, or the blob store fills with orphans.
   await removeFile(row?.filePathname);
   await db.delete(documents).where(eq(documents.id, documentId));
-  refresh("/clients", `/clients/${row?.clientId ?? ""}`);
+  refresh("/clients", `/clients/${row?.clientId ?? ""}`, `/projects/${row?.projectId ?? ""}`);
   return { ok: true as const };
 }
 
@@ -761,7 +766,13 @@ export async function toggleInsightArchived(insightId: string) {
 export async function setDocumentProject(documentId: string, projectId: string | null) {
   const [row] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
   await db.update(documents).set({ projectId: projectId || null }).where(eq(documents.id, documentId));
-  refresh("/clients", `/clients/${row?.clientId ?? ""}`);
+  // Both ends of the move go stale: the project it left and the one it joined.
+  refresh(
+    "/clients",
+    `/clients/${row?.clientId ?? ""}`,
+    `/projects/${row?.projectId ?? ""}`,
+    `/projects/${projectId ?? ""}`,
+  );
   return { ok: true as const };
 }
 

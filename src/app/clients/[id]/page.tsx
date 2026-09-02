@@ -135,6 +135,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
           >
             <DocumentList
               clientId={id}
+              projects={projectRows.map((r) => ({ id: r.project.id, name: r.project.name }))}
               documents={myDocs}
               storageOn={storage.ok}
               canDirect={canDirectUpload()}

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Download, FileText, Image as ImageIcon, Pin, Plus, Trash2, X } from "lucide-react";
 import { clsx } from "clsx";
 import type { Document } from "@/lib/db/schema";
-import { createDocument, deleteDocument, toggleDocumentPin, updateDocument } from "@/server/actions";
+import { createDocument, deleteDocument, setDocumentProject, toggleDocumentPin, updateDocument } from "@/server/actions";
 import { Card, Chip, Empty } from "./ui";
 import { Markdown } from "./markdown";
 import { DocumentUpload } from "./document-upload";
@@ -37,12 +37,18 @@ const KIND_TONE: Record<string, "brand" | "info" | "good" | "warn" | "neutral"> 
  */
 export function DocumentList({
   clientId,
+  projectId = null,
+  projects = [],
   documents,
   storageOn,
   canDirect,
   access,
 }: {
   clientId: string;
+  /** Set on a project page: anything added here is filed under that project. */
+  projectId?: string | null;
+  /** Projects this client has, for filing a document under one. */
+  projects?: { id: string; name: string }[];
   documents: Document[];
   storageOn: boolean;
   canDirect: boolean;
@@ -61,6 +67,7 @@ export function DocumentList({
     startTransition(async () => {
       const result = await createDocument({
         clientId,
+        projectId,
         title: String(formData.get("title") ?? ""),
         kind: String(formData.get("kind") ?? "note"),
         body: String(formData.get("body") ?? ""),
@@ -98,10 +105,38 @@ export function DocumentList({
   }
   const orderedGroups = KINDS.map((k) => [k.value, groups.get(k.value) ?? []] as const).filter(([, d]) => d.length > 0);
 
+  /*
+   * Filing a document under a project. On a client page this doubles as
+   * attribution — "which project is this part of" is the thing you want to
+   * see. Inside a project the answer is already known, so the control moves
+   * into the row actions and is only there for moving it somewhere else.
+   */
+  const projectPicker = (doc: Document) =>
+    projects.length === 0 ? null : (
+      <select
+        value={doc.projectId ?? ""}
+        onChange={(e) =>
+          startTransition(async () => {
+            await setDocumentProject(doc.id, e.target.value || null);
+            router.refresh();
+          })
+        }
+        onClick={(e) => e.stopPropagation()}
+        className="input w-auto shrink-0 py-1 text-[11.5px]"
+        aria-label={`File ${doc.title} under a project`}
+        title="File under a project"
+      >
+        <option value="">Unfiled</option>
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>{p.name}</option>
+        ))}
+      </select>
+    );
+
   return (
     <div className="flex flex-col gap-2.5">
       {showUpload ? (
-        <DocumentUpload clientId={clientId} storageOn={storageOn} canDirect={canDirect} access={access} />
+        <DocumentUpload clientId={clientId} projectId={projectId} storageOn={storageOn} canDirect={canDirect} access={access} />
       ) : (
         <div className="flex items-center gap-2">
           <button onClick={() => setShowUpload(true)} className="btn btn-sm btn-primary">
@@ -136,7 +171,11 @@ export function DocumentList({
               name="body"
               rows={14}
               className="input font-[inherit] text-[13px] leading-relaxed"
-              placeholder={"Paste or write it here. Markdown works — # headings, **bold**, - lists, and tables.\n\nThis is for things you read: briefs, brand guidelines, how they like to work, account structure, the strategy you agreed."}
+              placeholder={
+              projectId
+                ? "Paste or write it here. Markdown works — # headings, **bold**, - lists, and tables.\n\nDrafts, notes and deliverables for this project."
+                : "Paste or write it here. Markdown works — # headings, **bold**, - lists, and tables.\n\nThis is for things you read: briefs, brand guidelines, how they like to work, account structure, the strategy you agreed."
+            }
             />
             {error && <p className="text-[12.5px]" style={{ color: "var(--color-urgent)" }}>{error}</p>}
             <div className="flex justify-end gap-2">
@@ -155,8 +194,12 @@ export function DocumentList({
       {documents.length === 0 && !creating && (
         <Card>
           <Empty
-            title="No documents yet"
-            hint="Drop in briefs, brand guidelines, decks exported to PDF, the strategy you agreed. Kept whole and readable — and the brain can read them too."
+            title={projectId ? "Nothing filed here yet" : "No documents yet"}
+            hint={
+              projectId
+                ? "Drafts, the finished deliverable, decks exported to PDF — anything that belongs to this piece of work. Kept whole and readable, and the brain can read them too."
+                : "Drop in briefs, brand guidelines, decks exported to PDF, the strategy you agreed. Kept whole and readable — and the brain can read them too."
+            }
           />
         </Card>
       )}
@@ -214,12 +257,15 @@ export function DocumentList({
 
                     {doc.pinned && <Pin size={11} style={{ color: "var(--color-brand)" }} fill="currentColor" />}
 
+                    {!projectId && projectPicker(doc)}
+
                     <span className="hidden shrink-0 text-[11px] text-muted sm:inline">
                       {doc.fileSize ? `${Math.round(doc.fileSize / 1024)} KB · ` : ""}
                       {doc.updatedAt.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                     </span>
 
                     <div className="flex shrink-0 items-center gap-0.5 row-actions">
+                      {projectId && projectPicker(doc)}
                       {doc.filePathname && (
                         <a
                           href={`/api/documents/${doc.id}/file`}

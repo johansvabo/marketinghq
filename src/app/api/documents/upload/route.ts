@@ -72,6 +72,7 @@ export async function POST(request: Request) {
 
   revalidatePath("/clients");
   if (clientId) revalidatePath(`/clients/${clientId}`);
+  if (projectId) revalidatePath(`/projects/${projectId}`);
 
   return Response.json({ created, failed, storageConfigured: storageConfigured() });
 }

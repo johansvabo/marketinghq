@@ -25,11 +25,14 @@ type Result = {
  */
 export function DocumentUpload({
   clientId,
+  projectId = null,
   storageOn,
   canDirect,
   access,
 }: {
   clientId: string;
+  /** Set when uploading from inside a project, so the file lands filed. */
+  projectId?: string | null;
   storageOn: boolean;
   /** Whether the browser can upload straight to storage — needs a read-write token. */
   canDirect: boolean;
@@ -80,6 +83,7 @@ export function DocumentUpload({
             fileType: file.type,
             fileSize: file.size,
             clientId,
+            projectId,
           }),
         });
 
@@ -121,6 +125,7 @@ export function DocumentUpload({
   async function sendThroughServer(list: File[]): Promise<Result> {
     const body = new FormData();
     body.set("clientId", clientId);
+    if (projectId) body.set("projectId", projectId);
     for (const file of list) body.append("files", file);
 
     const response = await fetch("/api/documents/upload", { method: "POST", body });
