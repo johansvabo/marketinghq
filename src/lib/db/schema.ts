@@ -265,6 +265,14 @@ export const documents = sqliteTable(
     body: text("body").notNull().default(""),
     // brief | strategy | brand | process | research | reference | note
     kind: text("kind").notNull().default("note"),
+    /*
+     * How `body` should be read.
+     *   markdown → prose, the default for everything written or extracted
+     *   html     → a self-contained layout, rendered in a sandboxed frame
+     * Anything that is not "html" is treated as prose, so an unknown value can
+     * never cause markup to be rendered.
+     */
+    format: text("format").notNull().default("markdown"),
     tags: text("tags", { mode: "json" }).$type<string[]>().default([]),
     pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
     /*

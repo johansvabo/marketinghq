@@ -150,6 +150,12 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
           type: "string",
           enum: ["brief", "strategy", "brand", "process", "research", "reference", "note"],
         },
+        format: {
+          type: "string",
+          enum: ["markdown", "html"],
+          description:
+            "How the body should be read. \"markdown\" for anything written. \"html\" only for a finished, self-contained layout — one fragment with all styling in a single <style> block, no scripts, no external fonts, stylesheets or images. It is rendered in a sandboxed frame, so nothing it loads from outside will appear.",
+        },
       },
       required: ["title", "body"],
       additionalProperties: false,
@@ -695,6 +701,8 @@ async function saveDraft(input: any, context: ToolContext): Promise<ToolResult> 
       title: input.title,
       body: input.body,
       kind: input.kind ?? "note",
+      // Only an explicit "html" renders as a layout; anything else is prose.
+      format: input.format === "html" ? "html" : "markdown",
       // Recorded as the team's work, not yours — the distinction is the point.
       source: context.agentKey ? "agent" : "manual",
       authorAgent: context.agentKey ?? null,
@@ -702,7 +710,9 @@ async function saveDraft(input: any, context: ToolContext): Promise<ToolResult> 
     .returning();
 
   return {
-    text: `Saved to ${client ? `${client.name}'s` : "the general"} documents as "${row.title}". It is now searchable and the rest of the team can read it.`,
+    text: `Saved to ${client ? `${client.name}'s` : "the general"} documents as "${row.title}"${
+      row.format === "html" ? ", and it renders as a layout they can open and print" : ""
+    }. It is now searchable and the rest of the team can read it.`,
     data: row.id,
   };
 }

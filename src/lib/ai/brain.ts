@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, projects } from "@/lib/db/schema";
 import { format } from "@/lib/dates";
-import { anthropic, MODEL } from "./client";
+import { anthropic, currentModel, isTransient } from "./client";
 import { BRAIN_TOOLS, runBrainTool } from "./tools";
 import { AGENTS, agentSystemPrompt, type Agent } from "./agents";
 
@@ -118,6 +118,7 @@ export async function runBrain(opts: {
   agent?: Agent | null;
 }): Promise<BrainResult> {
   const client = anthropic();
+  const model = await currentModel();
   const messages = [...opts.messages];
   const toolCalls: BrainResult["toolCalls"] = [];
   const maxTurns = opts.maxTurns ?? 8;
@@ -156,22 +157,37 @@ export async function runBrain(opts: {
   let containerId: string | undefined;
 
   for (let turn = 0; turn < maxTurns; turn++) {
-    const stream = client.messages.stream({
-      model: MODEL,
-      max_tokens: 32_000,
-      system,
-      messages,
-      tools,
-      ...(containerId ? { container: containerId } : {}),
-      thinking: { type: "adaptive" },
-      output_config: { effort: "high" },
-    });
+    /*
+     * A transient failure — Anthropic at capacity, a dropped connection — gets
+     * a couple of quick retries before it reaches the user as an error. Text
+     * already streamed this turn is discarded and the request re-sent whole,
+     * since a partial answer with no continuation is worse than a short delay.
+     */
+    let response: Anthropic.Message | undefined;
+    for (let attempt = 0; ; attempt++) {
+      const stream = client.messages.stream({
+        model,
+        max_tokens: 32_000,
+        system,
+        messages,
+        tools,
+        ...(containerId ? { container: containerId } : {}),
+        thinking: { type: "adaptive" },
+        output_config: { effort: "high" },
+      });
 
-    if (opts.onEvent) {
-      stream.on("text", (delta) => opts.onEvent!({ type: "text", text: delta }));
+      if (opts.onEvent) {
+        stream.on("text", (delta) => opts.onEvent!({ type: "text", text: delta }));
+      }
+
+      try {
+        response = await stream.finalMessage();
+        break;
+      } catch (error) {
+        if (!isTransient(error) || attempt >= 2) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+      }
     }
-
-    const response = await stream.finalMessage();
     containerId = response.container?.id ?? containerId;
 
     const text = response.content
@@ -239,16 +255,28 @@ export async function generate(opts: {
   effort?: "low" | "medium" | "high";
 }): Promise<string> {
   const client = anthropic();
-  const stream = client.messages.stream({
-    model: MODEL,
-    max_tokens: opts.maxTokens ?? 16_000,
-    system: opts.system,
-    messages: [{ role: "user", content: opts.prompt }],
-    thinking: { type: "adaptive" },
-    output_config: { effort: opts.effort ?? "medium" },
-  });
+  const model = await currentModel();
 
-  const response = await stream.finalMessage();
+  let response: Anthropic.Message | undefined;
+  for (let attempt = 0; ; attempt++) {
+    const stream = client.messages.stream({
+      model,
+      max_tokens: opts.maxTokens ?? 16_000,
+      system: opts.system,
+      messages: [{ role: "user", content: opts.prompt }],
+      thinking: { type: "adaptive" },
+      output_config: { effort: opts.effort ?? "medium" },
+    });
+
+    try {
+      response = await stream.finalMessage();
+      break;
+    } catch (error) {
+      if (!isTransient(error) || attempt >= 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+    }
+  }
+
   return response.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)

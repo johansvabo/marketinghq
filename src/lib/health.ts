@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db, dbInitError } from "@/lib/db";
 import { env, isConfigured } from "@/lib/env";
+import { currentModel } from "@/lib/ai/client";
 import { looksLikeAPastedBlock } from "@/lib/config-warnings";
 import { blobTokenSource, canDirectUpload, storageAvailable } from "@/lib/storage";
 
@@ -164,7 +165,7 @@ async function configChecks(): Promise<Check[]> {
 
   checks.push(
     isConfigured.anthropic()
-      ? { label: "Claude", state: "ok", hint: env.anthropicModel }
+      ? { label: "Claude", state: "ok", hint: await currentModel() }
       : {
           label: "Claude",
           state: "warn",

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { clients } from "@/lib/db/schema";
 import type { SourceDocument } from "@/lib/import/files";
 import { chunkText } from "@/lib/import/files";
-import { anthropic, MODEL } from "./client";
+import { anthropic, currentModel, isTransient } from "./client";
 
 export const INSIGHT_KINDS = [
   "insight",
@@ -88,19 +88,29 @@ function contextBlock(names: string[], hint?: string): string {
 
 async function extractOne(content: Anthropic.ContentBlockParam[], names: string[], hint?: string): Promise<Candidate[]> {
   const client = anthropic();
+  const model = await currentModel();
 
-  const response = await client.messages.parse({
-    model: MODEL,
-    max_tokens: 16_000,
-    system: [
-      // Stable prefix first so repeated chunks hit the cache.
-      { type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } },
-      { type: "text", text: contextBlock(names, hint) },
-    ],
-    messages: [{ role: "user", content }],
-    thinking: { type: "adaptive" },
-    output_config: { effort: "medium", format: zodOutputFormat(ExtractionSchema) },
-  });
+  let response;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      response = await client.messages.parse({
+        model,
+        max_tokens: 16_000,
+        system: [
+          // Stable prefix first so repeated chunks hit the cache.
+          { type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } },
+          { type: "text", text: contextBlock(names, hint) },
+        ],
+        messages: [{ role: "user", content }],
+        thinking: { type: "adaptive" },
+        output_config: { effort: "medium", format: zodOutputFormat(ExtractionSchema) },
+      });
+      break;
+    } catch (error) {
+      if (!isTransient(error) || attempt >= 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+    }
+  }
 
   return (response.parsed_output?.entries ?? []).map(normalize);
 }

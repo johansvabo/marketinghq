@@ -23,7 +23,7 @@ import { addDays } from "@/lib/dates";
 import { runProactiveEngine } from "@/lib/proactive/engine";
 import { materializeReportRuns, nextDueDate, reportingPeriod, type Cadence } from "@/lib/reporting/schedule";
 import { draftReport } from "@/lib/reporting/draft";
-import { describeAiError } from "@/lib/ai/client";
+import { AVAILABLE_MODELS, describeAiError, setModelOverride } from "@/lib/ai/client";
 import { INSIGHT_KINDS } from "@/lib/ai/import";
 import { syncAll } from "@/lib/integrations/sync";
 import { removeFile } from "@/lib/storage";
@@ -33,6 +33,17 @@ import { planCycle as planCycleNow, processPending, saveBriefingConfig } from "@
 function refresh(...paths: string[]) {
   // Callers interpolate ids that may be null, which leaves a bare "/projects/".
   for (const path of ["/", ...paths]) if (!path.endsWith("/") || path === "/") revalidatePath(path);
+}
+
+/* -------------------------------------------------------------------- model */
+
+export async function setModel(modelId: string | null) {
+  if (modelId !== null && !AVAILABLE_MODELS.some((m) => m.id === modelId)) {
+    return { ok: false as const, error: "Unknown model." };
+  }
+  await setModelOverride(modelId);
+  refresh("/settings");
+  return { ok: true as const };
 }
 
 /* ------------------------------------------------------------------- tasks */

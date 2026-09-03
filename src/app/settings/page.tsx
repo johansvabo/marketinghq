@@ -1,8 +1,10 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, connections, stakeholders, syncRuns } from "@/lib/db/schema";
-import { env } from "@/lib/env";
+import { env, isConfigured } from "@/lib/env";
 import { systemHealth, type HealthState } from "@/lib/health";
+import { modelStatus } from "@/lib/ai/client";
+import { ModelPicker } from "@/components/model-picker";
 import { PROVIDERS, type ProviderId } from "@/lib/integrations/oauth";
 import { relativeDay } from "@/lib/dates";
 import { Card, CardTitle, Chip, ClientDot, Empty, PageHeader } from "@/components/ui";
@@ -54,6 +56,7 @@ export default async function SettingsPage() {
   // everything else degrades to empty rather than throwing the whole page away.
   const health = await systemHealth();
   const problems = health.filter((c) => c.state !== "ok");
+  const model = isConfigured.anthropic() ? await modelStatus() : null;
 
   const data = await loadSettingsData();
   const { connectionRows, clientRows, stakeholderRows, recentSyncs } = data;
@@ -92,8 +95,19 @@ export default async function SettingsPage() {
                 <div className="flex items-center gap-2.5">
                   <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: STATE_COLOR[item.state] }} />
                   <span className="text-[13px] font-medium">{item.label}</span>
-                  <span className="ml-auto truncate pl-2 text-[11.5px] text-muted">{item.hint}</span>
+                  {item.label === "Claude" && model ? (
+                    <span className="ml-auto">
+                      <ModelPicker current={model.id} isOverride={model.isOverride} />
+                    </span>
+                  ) : (
+                    <span className="ml-auto truncate pl-2 text-[11.5px] text-muted">{item.hint}</span>
+                  )}
                 </div>
+                {item.label === "Claude" && model?.isOverride && (
+                  <p className="mt-1 pl-4 text-[11.5px] text-muted">
+                    Overridden from the default. Worth switching back once things are normal again.
+                  </p>
+                )}
                 {item.fix && (
                   <p className="mt-1 pl-4 text-[11.5px] leading-relaxed" style={{ color: STATE_COLOR[item.state] }}>
                     {item.fix}

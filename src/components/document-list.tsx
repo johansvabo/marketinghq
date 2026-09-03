@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Download, FileText, Image as ImageIcon, Pin, Plus, Trash2, X } from "lucide-react";
+import { Download, ExternalLink, FileText, Image as ImageIcon, LayoutTemplate, Pin, Plus, Trash2, X } from "lucide-react";
 import { clsx } from "clsx";
 import type { Document } from "@/lib/db/schema";
 import { createDocument, deleteDocument, setDocumentProject, toggleDocumentPin, updateDocument } from "@/server/actions";
@@ -241,7 +241,9 @@ export function DocumentList({
               return (
                 <div key={doc.id} className={clsx(index > 0 && "border-t")}>
                   <div className="group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-[var(--raised)]">
-                    {doc.fileType?.startsWith("image/") ? (
+                    {doc.format === "html" ? (
+                      <LayoutTemplate size={13} className="shrink-0" style={{ color: "var(--color-brand)" }} />
+                    ) : doc.fileType?.startsWith("image/") ? (
                       <ImageIcon size={13} className="shrink-0 text-[var(--ink-muted)]" />
                     ) : (
                       <FileText size={13} className="shrink-0 text-[var(--ink-muted)]" />
@@ -307,7 +309,31 @@ export function DocumentList({
                           {doc.extractionNote}
                         </p>
                       )}
-                      {doc.body.trim() ? (
+                      {doc.format === "html" && doc.body.trim() ? (
+                        <div className="flex flex-col gap-2">
+                          {/*
+                           * A layout is model-written markup, so it renders in a
+                           * sandboxed frame: no scripts, no access to this page,
+                           * its own opaque origin. srcDoc keeps it self-contained.
+                           */}
+                          <iframe
+                            srcDoc={doc.body}
+                            sandbox=""
+                            title={doc.title}
+                            loading="lazy"
+                            className="h-[560px] w-full rounded-[10px] border bg-white"
+                          />
+                          <a
+                            href={`/api/documents/${doc.id}/render`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-sm self-start"
+                          >
+                            <ExternalLink size={13} />
+                            Open full size — print to PDF from there
+                          </a>
+                        </div>
+                      ) : doc.body.trim() ? (
                         <Markdown source={doc.body} />
                       ) : (
                         <p className="text-[12.5px] text-muted">Nothing readable in this one — open the original above.</p>
