@@ -147,12 +147,12 @@ export function BrainChat({
               <h2 className="text-[17px] font-semibold tracking-tight">{emptyTitle ?? "Ask your own record"}</h2>
               <p className="max-w-[46ch] text-[13px] leading-relaxed text-muted">
                 {emptyHint ??
-                  "The one that sees everything at once — every client, all your captured thinking, your numbers and your calendar. Ask it across clients, hand it meeting notes to file, or work out what deserves your day."}
+                  "The one that sees everything at once — every client, all your captured thinking, your numbers, your calendar, and the live web. Ask it across clients, hand it meeting notes to file, or work out what deserves your day."}
               </p>
               {!emptyHint && (
                 <p className="max-w-[46ch] text-[12px] leading-relaxed text-muted">
                   For work inside one discipline — a post, a search plan, a competitor read, a tender window —{" "}
-                  <Link href="/team" className="underline">the team</Link> goes deeper and can search the live web.
+                  <Link href="/team" className="underline">the team</Link> goes deeper on that one thing.
                 </p>
               )}
             </div>

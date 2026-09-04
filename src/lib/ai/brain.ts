@@ -13,7 +13,8 @@ You are not a general assistant. You are the part of their head that keeps track
 
 How you work:
 
-- Look things up before answering. You have tools that read the real data — tasks, projects, captured insights, ad and analytics numbers, calendar, reports. Use them. An answer built from the actual database beats a plausible one every time.
+- Look things up before answering. You have tools that read the real data — tasks, projects, captured insights, ad and analytics numbers, calendar, reports — and you can search the live web. Use whichever the question actually needs. An answer built from the actual database or a real search beats a plausible one every time.
+- Search the web when the question is about the outside world — a competitor, a market, a fact that changes over time, something that happened recently. Your training data is not current and you know it. Do not search for things the database already has an answer to; check there first.
 - If the brain doesn't have something, say so plainly and say what would need to be captured for you to answer next time. Never fill a gap with a guess dressed as a fact.
 - Give the answer first, then the reasoning. They are usually reading this between meetings.
 - Be concrete about numbers: name the metric, the period, and the comparison. "Meta CPA is DKK 412 for the last 28 days, up 34% on the previous 28" — not "CPA is up quite a bit".
@@ -33,7 +34,7 @@ Your answer belongs in the conversation. Filing it into their documents is a sep
 
 ## The team
 
-Five specialists work alongside you in this platform. Each holds one discipline, produces work on a schedule, and can search the live web — which you cannot. When a request sits squarely with one of them, say so and point at them instead of doing a thinner version yourself:
+Five specialists work alongside you in this platform. Each holds one discipline in depth and produces work on a schedule. You can search the web the same as they can, but a request that sits squarely inside one discipline usually gets a better answer from the specialist who lives in it than a thinner version from you — say so and point at them:
 
 TEAM_ROSTER
 
@@ -76,6 +77,13 @@ export const teamRoster = () =>
 
 /** The brain's own system prompt, with the live team roster written into it. */
 export const brainSystemPrompt = () => IDENTITY.replace("TEAM_ROSTER", teamRoster());
+
+/**
+ * Whether a given turn gets web search. A specialist opts in per agent
+ * (agent.web); the brain itself — no agent passed — gets it unconditionally,
+ * since it has no discipline of its own to stay inside.
+ */
+export const wantsWeb = (agent: Agent | null | undefined): boolean => (agent ? agent.web : true);
 
 /** Facts about the current state of the world, refreshed on every request. */
 async function runtimeContext(): Promise<string> {
@@ -134,12 +142,13 @@ export async function runBrain(opts: {
   ];
 
   /*
-   * Specialists who reason about the outside world — competitors, procurement
-   * notices, market moves — get web search. Without it they would answer from
-   * stale memory and sound just as confident, which is the failure mode most
-   * worth avoiding here.
+   * Web search is on by default: for a specialist it is opt-in per agent
+   * (opts.agent.web), and the brain itself gets it unless a specialist with
+   * web deliberately turned off is answering. Without it, a question about
+   * the outside world gets answered from stale memory and sounds just as
+   * confident, which is the failure mode most worth avoiding here.
    */
-  const tools: Anthropic.ToolUnion[] = opts.agent?.web
+  const tools: Anthropic.ToolUnion[] = wantsWeb(opts.agent)
     ? [...BRAIN_TOOLS, { type: "web_search_20260209", name: "web_search", max_uses: 6 } as Anthropic.ToolUnion]
     : [...BRAIN_TOOLS];
   if (opts.systemExtra) system.push({ type: "text", text: opts.systemExtra });

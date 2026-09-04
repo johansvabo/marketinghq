@@ -4,7 +4,7 @@
  * These check the text the model actually receives, not the source that builds it.
  */
 import { AGENTS, agentSystemPrompt } from "../src/lib/ai/agents";
-import { brainSystemPrompt } from "../src/lib/ai/brain";
+import { brainSystemPrompt, wantsWeb } from "../src/lib/ai/brain";
 
 let pass = 0;
 let fail = 0;
@@ -26,6 +26,16 @@ for (const agent of Object.values(AGENTS)) {
 }
 
 check("the brain is honest about decks", /Nobody here builds a finished PowerPoint/.test(brain));
+
+// The brain used to tell itself it had no web access while agents did —
+// wrong once web search was turned on for it too. Both the capability and
+// what the prompt claims about it need to agree.
+check("the brain gets web search with no agent selected", wantsWeb(undefined) === true);
+check("a specialist with web on keeps it", wantsWeb(AGENTS.market) === true);
+check("a specialist with web off stays off", wantsWeb({ ...AGENTS.market, web: false }) === false);
+check("the brain's own prompt no longer denies it can search", !/which you cannot/i.test(brain));
+check("the brain is told when to search", /Search the web when the question is about the outside world/.test(brain));
+check("the brain is told not to search what the database already answers", /database already has an answer/.test(brain));
 
 // Every specialist carries the shared rules, whichever persona they lead with.
 for (const agent of Object.values(AGENTS)) {
