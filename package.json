@@ -15,11 +15,12 @@
     "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
     "test:counts": "tsx scripts/test-counts.mts",
-    "test": "npm run test:import && npm run test:counts && npm run test:logic && npm run test:migrations && npm run test:prompts && npm run test:model",
+    "test": "npm run test:import && npm run test:counts && npm run test:logic && npm run test:migrations && npm run test:prompts && npm run test:model && npm run test:assignments",
     "test:logic": "tsx scripts/test-logic.mts",
     "test:migrations": "tsx scripts/test-migrations.mts",
     "test:prompts": "tsx scripts/test-prompts.mts",
-    "test:model": "tsx scripts/test-model-fallback.mts"
+    "test:model": "tsx scripts/test-model-fallback.mts",
+    "test:assignments": "tsx scripts/test-assignments.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

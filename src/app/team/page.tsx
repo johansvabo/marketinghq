@@ -4,20 +4,22 @@ import { Globe } from "lucide-react";
 import { db } from "@/lib/db";
 import { chatThreads } from "@/lib/db/schema";
 import { AGENT_LIST } from "@/lib/ai/agents";
+import { ASSIGNABLE, REVIEWER, recentAssignments } from "@/lib/ai/assignments";
 import { isConfigured } from "@/lib/env";
 import { relativeDay } from "@/lib/dates";
 import { getBriefingConfig, recentBriefings } from "@/lib/ai/briefings";
-import { Card, Empty, PageHeader } from "@/components/ui";
+import { Card, Chip, Empty, PageHeader } from "@/components/ui";
+import { BriefTeam } from "@/components/brief-team";
 import { BriefingFeed } from "@/components/briefing-feed";
 import { BriefingSchedule } from "@/components/briefing-schedule";
-import { clients } from "@/lib/db/schema";
+import { clients, projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Team" };
 
 export default async function TeamPage() {
-  const [threads, counts, config, feed, activeClients] = await Promise.all([
+  const [threads, counts, config, feed, activeClients, assignmentRows, clientOptions, projectOptions] = await Promise.all([
     db.select().from(chatThreads).where(isNotNull(chatThreads.agentKey)).orderBy(desc(chatThreads.updatedAt)).limit(8),
     db
       .select({ agentKey: chatThreads.agentKey, n: sql<number>`count(*)` })
@@ -27,6 +29,9 @@ export default async function TeamPage() {
     getBriefingConfig(),
     recentBriefings(30),
     db.select({ id: clients.id }).from(clients).where(eq(clients.status, "active")),
+    recentAssignments(8),
+    db.select({ id: clients.id, name: clients.name }).from(clients).where(eq(clients.status, "active")).orderBy(clients.name),
+    db.select({ id: projects.id, name: projects.name, clientId: projects.clientId }).from(projects).orderBy(projects.name),
   ]);
 
   const countFor = new Map(counts.map((c) => [c.agentKey, Number(c.n)]));
@@ -35,8 +40,39 @@ export default async function TeamPage() {
     <>
       <PageHeader
         title="Team"
-        subtitle="One discipline each, in depth. For work the Brain would only do a thinner version of"
+        subtitle="One discipline each, in depth. Ask one of them, or put the whole team on the same brief"
+        actions={
+          isConfigured.anthropic() ? (
+            <BriefTeam
+              agents={ASSIGNABLE.map((a) => ({ key: a.key, name: a.name, role: a.role, colour: a.colour }))}
+              reviewer={REVIEWER ? { name: REVIEWER.name } : null}
+              clients={clientOptions}
+              projects={projectOptions}
+            />
+          ) : null
+        }
       />
+
+      {assignmentRows.length > 0 && (
+        <section className="mb-4">
+          <h2 className="section-title mb-2 px-1">Team assignments</h2>
+          <div className="card overflow-hidden">
+            {assignmentRows.map(({ assignment, client, total, done }, index) => (
+              <Link
+                key={assignment.id}
+                href={`/team/assignments/${assignment.id}`}
+                className={`flex items-center gap-2 px-3.5 py-2.5 transition-colors hover:bg-[var(--raised)] ${index > 0 ? "border-t" : ""}`}
+              >
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{assignment.title}</span>
+                {client && <span className="hidden shrink-0 text-[11.5px] text-muted sm:inline">{client.name}</span>}
+                <Chip tone={assignment.status === "ready" ? "good" : assignment.status === "error" ? "urgent" : "info"}>
+                  {assignment.status === "ready" ? "done" : `${done}/${total}`}
+                </Chip>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {!isConfigured.anthropic() && (
         <Card tone="warn" className="mb-4">

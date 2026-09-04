@@ -57,6 +57,13 @@
       "when": 1788441422179,
       "tag": "0007_design_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788558862816,
+      "tag": "0008_team_assignments",
+      "breakpoints": true
     }
   ]
 }

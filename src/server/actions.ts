@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  assignments,
   briefings,
   clients,
   connections,
@@ -29,10 +30,69 @@ import { syncAll } from "@/lib/integrations/sync";
 import { removeFile } from "@/lib/storage";
 import { AGENTS, type AgentKey } from "@/lib/ai/agents";
 import { planCycle as planCycleNow, processPending, saveBriefingConfig } from "@/lib/ai/briefings";
+import { createAssignment, processAssignment } from "@/lib/ai/assignments";
 
 function refresh(...paths: string[]) {
   // Callers interpolate ids that may be null, which leaves a bare "/projects/".
   for (const path of ["/", ...paths]) if (!path.endsWith("/") || path === "/") revalidatePath(path);
+}
+
+/* -------------------------------------------------------- team assignments */
+
+export async function briefTheTeam(input: {
+  title: string;
+  brief: string;
+  clientId?: string | null;
+  projectId?: string | null;
+  agentKeys: string[];
+}) {
+  const result = await createAssignment({ ...input, agentKeys: input.agentKeys as AgentKey[] });
+  if (!result.ok) return result;
+  refresh("/team");
+  return result;
+}
+
+/**
+ * Works the assignment for a while and reports what is left. A whole team on
+ * one brief does not fit in a single request, so the page calls this again
+ * until nothing is outstanding.
+ */
+export async function runAssignment(assignmentId: string) {
+  try {
+    const progress = await processAssignment(assignmentId);
+    refresh("/team", `/team/assignments/${assignmentId}`);
+    return { ok: true as const, ...progress };
+  } catch (error) {
+    return { ok: false as const, error: describeAiError(error) };
+  }
+}
+
+export async function deleteAssignment(assignmentId: string) {
+  await db.delete(assignments).where(eq(assignments.id, assignmentId));
+  refresh("/team");
+  return { ok: true as const };
+}
+
+/** Keep the gathered answer as a real document, filed like anything else. */
+export async function fileAssignment(assignmentId: string) {
+  const [row] = await db.select().from(assignments).where(eq(assignments.id, assignmentId)).limit(1);
+  if (!row?.synthesis) return { ok: false as const, error: "There is nothing gathered to file yet." };
+
+  const [doc] = await db
+    .insert(documents)
+    .values({
+      clientId: row.clientId,
+      projectId: row.projectId,
+      title: row.title,
+      body: row.synthesis,
+      kind: "strategy",
+      source: "agent",
+      authorAgent: "editor",
+    })
+    .returning();
+
+  refresh("/clients", `/clients/${row.clientId ?? ""}`, `/projects/${row.projectId ?? ""}`, `/team/assignments/${assignmentId}`);
+  return { ok: true as const, id: doc.id, clientId: row.clientId };
 }
 
 /* -------------------------------------------------------------------- model */

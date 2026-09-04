@@ -591,6 +591,62 @@ export const settings = sqliteTable("settings", {
   updatedAt: updatedAt(),
 });
 
+
+/**
+ * One brief given to several specialists at once. Each works it in their own
+ * discipline, then the reviewer synthesises everything into a single document
+ * — so a strategy question comes back as one answer rather than six to read
+ * and reconcile by hand.
+ */
+export const assignments = sqliteTable(
+  "assignments",
+  {
+    id: id(),
+    title: text("title").notNull(),
+    /** What was actually asked, in the user's own words. */
+    brief: text("brief").notNull(),
+    /** Optional: a market-entry question may not belong to a client yet. */
+    clientId: text("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    // running | ready | error — "running" covers work still queued
+    status: text("status").notNull().default("running"),
+    /** The reviewer's single gathered document, once everyone has reported. */
+    synthesis: text("synthesis"),
+    error: text("error"),
+    completedAt: integer("completed_at", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("assignments_status").on(t.status), index("assignments_created").on(t.createdAt)],
+);
+
+/** One specialist's contribution to an assignment. */
+export const contributions = sqliteTable(
+  "contributions",
+  {
+    id: id(),
+    assignmentId: text("assignment_id")
+      .notNull()
+      .references(() => assignments.id, { onDelete: "cascade" }),
+    agentKey: text("agent_key").notNull(),
+    // pending | running | ready | empty | error
+    status: text("status").notNull().default("pending"),
+    body: text("body"),
+    sources: text("sources", { mode: "json" }).$type<string[]>().default([]),
+    error: text("error"),
+    startedAt: integer("started_at", { mode: "timestamp" }),
+    completedAt: integer("completed_at", { mode: "timestamp" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("contribution_agent").on(t.assignmentId, t.agentKey),
+    index("contributions_status").on(t.status),
+  ],
+);
+
+export type Assignment = typeof assignments.$inferSelect;
+export type Contribution = typeof contributions.$inferSelect;
+
 export type Client = typeof clients.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Task = typeof tasks.$inferSelect;

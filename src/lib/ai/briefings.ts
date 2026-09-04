@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { briefings, clients, settings } from "@/lib/db/schema";
 import { lastOccurrence } from "@/lib/timezone";
-import { AGENT_LIST, AGENTS, getAgent, type AgentKey } from "./agents";
+import { AGENTS, agentRank, getAgent, type AgentKey } from "./agents";
 import { runBrain } from "./brain";
 import { isConfigured } from "@/lib/env";
 
@@ -132,8 +132,7 @@ async function nextPending() {
     .orderBy(asc(briefings.createdAt))
     .limit(50);
 
-  const reviewers = new Set(AGENT_LIST.filter((a) => a.runsLast).map((a) => a.key));
-  return [...rows].sort((a, b) => Number(reviewers.has(a.briefing.agentKey as AgentKey)) - Number(reviewers.has(b.briefing.agentKey as AgentKey)))[0];
+  return [...rows].sort((a, b) => agentRank(a.briefing.agentKey) - agentRank(b.briefing.agentKey))[0];
 }
 
 export async function processPending(
