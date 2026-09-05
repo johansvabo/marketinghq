@@ -30,7 +30,7 @@ import { syncAll } from "@/lib/integrations/sync";
 import { removeFile } from "@/lib/storage";
 import { AGENTS, type AgentKey } from "@/lib/ai/agents";
 import { planCycle as planCycleNow, processPending, saveBriefingConfig } from "@/lib/ai/briefings";
-import { createAssignment, processAssignment } from "@/lib/ai/assignments";
+import { createAssignment } from "@/lib/ai/assignments";
 
 function refresh(...paths: string[]) {
   // Callers interpolate ids that may be null, which leaves a bare "/projects/".
@@ -52,20 +52,11 @@ export async function briefTheTeam(input: {
   return result;
 }
 
-/**
- * Works the assignment for a while and reports what is left. A whole team on
- * one brief does not fit in a single request, so the page calls this again
- * until nothing is outstanding.
+/*
+ * Running an assignment lives in /api/assignments/[id]/run, not here: that
+ * work takes minutes and a route handler can declare its own maxDuration,
+ * where a server action only inherits its page's.
  */
-export async function runAssignment(assignmentId: string) {
-  try {
-    const progress = await processAssignment(assignmentId);
-    refresh("/team", `/team/assignments/${assignmentId}`);
-    return { ok: true as const, ...progress };
-  } catch (error) {
-    return { ok: false as const, error: describeAiError(error) };
-  }
-}
 
 export async function deleteAssignment(assignmentId: string) {
   await db.delete(assignments).where(eq(assignments.id, assignmentId));

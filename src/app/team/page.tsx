@@ -16,6 +16,9 @@ import { clients, projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
+// Server actions started from this page run AI work; without this they inherit
+// the host default of a few seconds and get killed mid-answer.
+export const maxDuration = 300;
 export const metadata = { title: "Team" };
 
 export default async function TeamPage() {

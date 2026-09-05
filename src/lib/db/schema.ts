@@ -631,6 +631,8 @@ export const contributions = sqliteTable(
     agentKey: text("agent_key").notNull(),
     // pending | running | ready | empty | error
     status: text("status").notNull().default("pending"),
+    /** Runs started. Bounded so work killed by a timeout cannot retry forever. */
+    attempts: integer("attempts").notNull().default(0),
     body: text("body"),
     sources: text("sources", { mode: "json" }).$type<string[]>().default([]),
     error: text("error"),

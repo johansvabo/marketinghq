@@ -1,12 +1,26 @@
-import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { assignments, clients, contributions, projects, type Assignment } from "@/lib/db/schema";
 import { isConfigured } from "@/lib/env";
 import { AGENTS, ORDERED_AGENTS, agentRank, getAgent, type AgentKey } from "./agents";
 import { runBrain } from "./brain";
+import { describeAiError } from "./client";
 
-/** A killed request would otherwise leave a contribution "running" forever. */
-const STALE_RUNNING_MS = 15 * 60 * 1000;
+/*
+ * A killed request would otherwise leave a contribution "running" forever.
+ *
+ * This window MUST stay comfortably longer than the route's maxDuration, or
+ * work that is genuinely still running gets reclaimed and started a second
+ * time in parallel — paying twice and racing to write the same row.
+ */
+const STALE_RUNNING_MS = 7 * 60 * 1000;
+
+/** Given up on after this many starts that never reached a result. */
+const MAX_ATTEMPTS = 3;
+
+/** Exposed so the recovery tests assert against the real values. */
+export const STALE_MS_FOR_TEST = STALE_RUNNING_MS;
+export const MAX_ATTEMPTS_FOR_TEST = MAX_ATTEMPTS;
 
 export const ASSIGNABLE = ORDERED_AGENTS.filter((a) => !a.runsLast);
 export const REVIEWER = ORDERED_AGENTS.find((a) => a.runsLast) ?? null;
@@ -47,11 +61,30 @@ export async function createAssignment(input: {
   return { ok: true, id: row.id };
 }
 
+/**
+ * Work whose request died before it could record anything. Most of the time
+ * that is a timeout, so it goes back in the queue — but only so many times.
+ * A specialist that cannot finish inside the host's limit would otherwise be
+ * picked up, killed and requeued indefinitely, which reads to the user as
+ * "still working" forever.
+ */
 async function reclaimAbandoned(now: Date): Promise<void> {
+  const cutoff = new Date(now.getTime() - STALE_RUNNING_MS);
+  const stale = and(eq(contributions.status, "running"), lt(contributions.startedAt, cutoff));
+
+  await db
+    .update(contributions)
+    .set({
+      status: "error",
+      error: `Ran out of time ${MAX_ATTEMPTS} times without finishing. This brief is probably too big for one specialist to answer in a single run — try narrowing it, or run this one on a faster model.`,
+      completedAt: now,
+    })
+    .where(and(stale, gte(contributions.attempts, MAX_ATTEMPTS)));
+
   await db
     .update(contributions)
     .set({ status: "pending", startedAt: null })
-    .where(and(eq(contributions.status, "running"), lt(contributions.startedAt, new Date(now.getTime() - STALE_RUNNING_MS))));
+    .where(and(eq(contributions.status, "running"), lt(contributions.startedAt, cutoff)));
 }
 
 /**
@@ -163,30 +196,38 @@ async function buildPrompt(assignment: Assignment, agentKey: AgentKey): Promise<
 }
 
 /**
- * Works the assignment for as long as the budget allows. One request rarely
- * covers a whole team, so this is safe to call repeatedly — each call picks up
- * whatever is still pending.
+ * Runs ONE specialist, then returns.
+ *
+ * It used to loop through as many as fitted a budget, which was the wrong
+ * shape for a host that kills the request at a fixed limit: a specialist
+ * started with seconds left got cut off mid-answer and left sitting at
+ * "running" with nothing to show. One per request means the whole limit
+ * belongs to one specialist, and the caller comes back for the next.
  */
 export async function processAssignment(
   assignmentId: string,
-  budgetMs = 200_000,
+  _budgetMs?: number,
   now = new Date(),
-): Promise<{ produced: number; failed: number; remaining: number; done: boolean }> {
-  if (!isConfigured.anthropic()) return { produced: 0, failed: 0, remaining: 0, done: false };
-
+): Promise<{ produced: number; failed: number; remaining: number; done: boolean; retryAfterMs?: number }> {
+  // Bookkeeping first: tidying up work abandoned by a killed request needs no
+  // API key, and skipping it when the key is missing would strand those rows
+  // at "running" for as long as it stayed missing.
   await reclaimAbandoned(now);
+
+  if (!isConfigured.anthropic()) {
+    const { outstanding } = await nextPending(assignmentId);
+    return { produced: 0, failed: 0, remaining: outstanding, done: outstanding === 0 };
+  }
 
   const [assignment] = await db.select().from(assignments).where(eq(assignments.id, assignmentId)).limit(1);
   if (!assignment) return { produced: 0, failed: 0, remaining: 0, done: true };
 
-  const deadline = Date.now() + budgetMs;
   let produced = 0;
   let failed = 0;
 
-  while (Date.now() < deadline) {
-    const { next } = await nextPending(assignmentId);
-    if (!next) break;
+  const { next } = await nextPending(assignmentId);
 
+  if (next) {
     const agent = getAgent(next.agentKey);
     if (!agent) {
       await db
@@ -194,55 +235,75 @@ export async function processAssignment(
         .set({ status: "error", error: "That specialist no longer exists.", completedAt: new Date() })
         .where(eq(contributions.id, next.id));
       failed++;
-      continue;
-    }
-
-    await db.update(contributions).set({ status: "running", startedAt: new Date() }).where(eq(contributions.id, next.id));
-
-    try {
-      const result = await runBrain({
-        agent,
-        messages: [{ role: "user", content: await buildPrompt(assignment, agent.key) }],
-        maxTurns: 12,
-      });
-
-      const text = result.text.trim();
-      const empty = text.length < 40;
-
+    } else {
+      // Recorded before the risky call, so a request killed mid-answer still
+      // leaves evidence that this one was tried.
       await db
         .update(contributions)
-        .set({
-          status: empty ? "empty" : "ready",
-          body: text,
-          sources: result.toolCalls.map((c) => c.name),
-          completedAt: new Date(),
-        })
+        .set({ status: "running", startedAt: new Date(), attempts: next.attempts + 1 })
         .where(eq(contributions.id, next.id));
 
-      // The reviewer's piece is the assignment's answer, not just another part.
-      if (agent.runsLast && !empty) {
+      try {
+        const result = await runBrain({
+          agent,
+          messages: [{ role: "user", content: await buildPrompt(assignment, agent.key) }],
+          maxTurns: 10,
+        });
+
+        const text = result.text.trim();
+        const empty = text.length < 40;
+
         await db
-          .update(assignments)
-          .set({ synthesis: text, updatedAt: new Date() })
-          .where(eq(assignments.id, assignmentId));
-      }
+          .update(contributions)
+          .set({
+            status: empty ? "empty" : "ready",
+            body: text,
+            sources: result.toolCalls.map((c) => c.name),
+            completedAt: new Date(),
+          })
+          .where(eq(contributions.id, next.id));
 
-      produced++;
-    } catch (error) {
-      await db
-        .update(contributions)
-        .set({
-          status: "error",
-          error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
-          completedAt: new Date(),
-        })
-        .where(eq(contributions.id, next.id));
-      failed++;
+        // The reviewer's piece is the assignment's answer, not just another part.
+        if (agent.runsLast && !empty) {
+          await db
+            .update(assignments)
+            .set({ synthesis: text, updatedAt: new Date() })
+            .where(eq(assignments.id, assignmentId));
+        }
+
+        produced++;
+      } catch (error) {
+        await db
+          .update(contributions)
+          .set({
+            status: "error",
+            // Humanised, not the SDK's raw body — this text is shown as-is.
+            error: describeAiError(error).slice(0, 300),
+            completedAt: new Date(),
+          })
+          .where(eq(contributions.id, next.id));
+        failed++;
+      }
     }
   }
 
-  const { outstanding, rows } = await nextPending(assignmentId);
+  const { outstanding, rows, next: stillAvailable } = await nextPending(assignmentId);
   const done = outstanding === 0;
+
+  /*
+   * Work outstanding but nothing to pick up means something is mid-flight —
+   * either genuinely running, or orphaned by a killed request and not yet old
+   * enough to reclaim. Say how long until it can be retried rather than
+   * handing back a button that would do nothing.
+   */
+  let retryAfterMs: number | undefined;
+  if (!done && !stillAvailable) {
+    const oldest = rows
+      .filter((r) => r.status === "running" && r.startedAt)
+      .map((r) => r.startedAt!.getTime())
+      .sort((a, b) => a - b)[0];
+    if (oldest) retryAfterMs = Math.max(0, oldest + STALE_RUNNING_MS - Date.now());
+  }
 
   if (done) {
     const allFailed = rows.every((r) => r.status === "error");
@@ -257,7 +318,7 @@ export async function processAssignment(
       .where(eq(assignments.id, assignmentId));
   }
 
-  return { produced, failed, remaining: outstanding, done };
+  return { produced, failed, remaining: outstanding, done, retryAfterMs };
 }
 
 export async function recentAssignments(limit = 20) {

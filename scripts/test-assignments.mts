@@ -7,7 +7,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/lib/db";
 import { assignments, clients, contributions } from "../src/lib/db/schema";
-import { createAssignment, nextPending, ASSIGNABLE, REVIEWER } from "../src/lib/ai/assignments";
+import { createAssignment, nextPending, processAssignment, ASSIGNABLE, REVIEWER } from "../src/lib/ai/assignments";
 import { AGENTS, ORDERED_AGENTS, agentRank } from "../src/lib/ai/agents";
 
 let pass = 0;
@@ -112,6 +112,50 @@ if (withFailure.ok) {
   const nextUp = await nextPending(withFailure.id);
   check("a failed or empty specialist still releases the reviewer", nextUp.next?.agentKey === "editor", String(nextUp.next?.agentKey));
 }
+
+/*
+ * Recovery from a request killed mid-answer — the failure that made a
+ * specialist look stuck at "working" indefinitely.
+ */
+const { STALE_MS_FOR_TEST, MAX_ATTEMPTS_FOR_TEST } = await import("../src/lib/ai/assignments");
+
+const stuck = await createAssignment({ title: "Stuck", brief: "b", agentKeys: ["strategy"] });
+if (!stuck.ok) process.exit(1);
+
+const setRunning = async (agentKey: string, startedAgo: number, attempts: number) =>
+  db.update(contributions)
+    .set({ status: "running", startedAt: new Date(Date.now() - startedAgo), attempts })
+    .where(and(eq(contributions.assignmentId, stuck.id), eq(contributions.agentKey, agentKey)));
+
+const statusOf = async (agentKey: string) => {
+  const [r] = await db.select().from(contributions)
+    .where(and(eq(contributions.assignmentId, stuck.id), eq(contributions.agentKey, agentKey))).limit(1);
+  return r;
+};
+
+// Still inside the window: genuinely running, must not be restarted underneath.
+await setRunning("strategy", 60_000, 1);
+await processAssignment(stuck.id);
+check("work still inside the time limit is left alone", (await statusOf("strategy")).status === "running");
+
+const fresh = await nextPending(stuck.id);
+check("...and is not offered as available work", fresh.next === undefined);
+
+// Past the window: the request that owned it is gone, so requeue it.
+await setRunning("strategy", STALE_MS_FOR_TEST + 60_000, 1);
+await processAssignment(stuck.id);
+const requeued = await statusOf("strategy");
+check("abandoned work is requeued, not left hanging", requeued.status !== "running", requeued.status);
+
+// Past the window and out of attempts: fail it loudly instead of looping.
+await setRunning("strategy", STALE_MS_FOR_TEST + 60_000, MAX_ATTEMPTS_FOR_TEST);
+await processAssignment(stuck.id);
+const givenUp = await statusOf("strategy");
+check("work that keeps timing out fails instead of retrying forever", givenUp.status === "error", givenUp.status);
+check("...and says why, in terms that suggest a fix", /too big|narrowing/i.test(givenUp.error ?? ""), givenUp.error ?? "");
+
+// The stale window must outlast the route limit, or live work gets double-run.
+check("the reclaim window is longer than the route's 300s limit", STALE_MS_FOR_TEST > 300_000, `${STALE_MS_FOR_TEST}ms`);
 
 await db.delete(assignments);
 await db.delete(clients).where(eq(clients.id, client.id));

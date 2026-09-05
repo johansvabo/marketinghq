@@ -10,6 +10,9 @@ import { FileAssignment } from "@/components/file-assignment";
 import { relativeDay } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
+// Server actions started from this page run AI work; without this they inherit
+// the host default of a few seconds and get killed mid-answer.
+export const maxDuration = 300;
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const row = await assignmentWithWork((await params).id);
@@ -31,6 +34,8 @@ export default async function AssignmentPage({ params }: { params: Promise<{ id:
   const { assignment, client, project, work } = row;
   const outstanding = work.filter((w) => w.status === "pending" || w.status === "running").length;
   const reviewer = work.find((w) => AGENTS[w.agentKey as AgentKey]?.runsLast);
+  const inFlight = work.find((w) => w.status === "running") ?? work.find((w) => w.status === "pending");
+  const nextUp = inFlight ? (AGENTS[inFlight.agentKey as AgentKey]?.name ?? null) : null;
   const specialists = work.filter((w) => !AGENTS[w.agentKey as AgentKey]?.runsLast);
 
   return (
@@ -62,7 +67,7 @@ export default async function AssignmentPage({ params }: { params: Promise<{ id:
       />
 
       <div className="mb-4 flex flex-col gap-3">
-        <AssignmentRunner assignmentId={assignment.id} outstanding={outstanding} />
+        <AssignmentRunner assignmentId={assignment.id} outstanding={outstanding} nextUp={nextUp} />
 
         <Card tone="info">
           <CardTitle>The brief</CardTitle>
@@ -126,7 +131,11 @@ export default async function AssignmentPage({ params }: { params: Promise<{ id:
                 <p className="text-[12.5px]" style={{ color: "var(--color-urgent)" }}>{item.error}</p>
               ) : (
                 <p className="text-[12.5px] text-muted">
-                  {item.status === "running" ? "Working on it now." : "Waiting their turn."}
+                  {item.status === "running"
+                    ? `Working on it now${item.startedAt ? ` — started ${relativeDay(item.startedAt).toLowerCase()}` : ""}.${
+                        item.attempts > 1 ? ` Attempt ${item.attempts}: the previous run ran over the time limit.` : ""
+                      }`
+                    : "Waiting their turn."}
                 </p>
               )}
             </Card>
