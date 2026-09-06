@@ -3,19 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import {
-  BrainCircuit,
-  CalendarClock,
-  Building2,
-  CheckSquare,
-  Users,
-  FolderKanban,
-  Lightbulb,
-  Moon,
-  Settings,
-  Sun,
-  Sunrise,
-} from "lucide-react";
+import { BrainCircuit, Building2, CalendarClock, CheckSquare, FolderKanban, GanttChartSquare, Lightbulb, Moon, Settings, Sun, Sunrise, Users } from "lucide-react";
 import { clsx } from "clsx";
 
 type NavItem = { href: string; label: string; icon: typeof Sunrise; exact?: boolean };
@@ -25,6 +13,7 @@ const NAV: NavItem[] = [
   { href: "/clients", label: "Clients", icon: Building2 },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
+  { href: "/plan", label: "Plan", icon: GanttChartSquare },
   { href: "/brain", label: "Brain", icon: BrainCircuit },
   { href: "/team", label: "Team", icon: Users },
   { href: "/insights", label: "Insights", icon: Lightbulb },
