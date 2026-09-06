@@ -3,7 +3,7 @@ import Link from "next/link";
 import { and, desc, eq } from "drizzle-orm";
 import { ArrowLeft, Globe } from "lucide-react";
 import { db } from "@/lib/db";
-import { chatMessages, chatThreads } from "@/lib/db/schema";
+import { chatMessages, chatThreads, clients, projects } from "@/lib/db/schema";
 import { AGENTS, getAgent, type AgentKey } from "@/lib/ai/agents";
 import { isConfigured } from "@/lib/env";
 import { relativeDay } from "@/lib/dates";
@@ -29,7 +29,7 @@ export default async function AgentPage({
 
   const { thread: threadId } = await searchParams;
 
-  const [threads, history] = await Promise.all([
+  const [threads, history, clientOptions, projectOptions, threadRows] = await Promise.all([
     db
       .select()
       .from(chatThreads)
@@ -39,7 +39,14 @@ export default async function AgentPage({
     threadId
       ? db.select().from(chatMessages).where(eq(chatMessages.threadId, threadId)).orderBy(chatMessages.createdAt)
       : Promise.resolve([]),
+    db.select({ id: clients.id, name: clients.name }).from(clients).where(eq(clients.status, "active")).orderBy(clients.name),
+    db.select({ id: projects.id, name: projects.name, clientId: projects.clientId }).from(projects).orderBy(projects.name),
+    // Fetched rather than found in the list above: an older conversation
+    // opened by link is not in the recent dozen, and would lose its subject.
+    threadId ? db.select().from(chatThreads).where(eq(chatThreads.id, threadId)).limit(1) : Promise.resolve([]),
   ]);
+
+  const threadRow = threadRows[0];
 
   return (
     <>
@@ -79,6 +86,10 @@ export default async function AgentPage({
           placeholder={`Ask ${agent.name}…`}
           emptyTitle={`${agent.name} — ${agent.role.toLowerCase()}`}
           emptyHint={agent.blurb}
+          about={{ clients: clientOptions, projects: projectOptions }}
+          clientId={threadRow?.clientId ?? null}
+          projectId={threadRow?.projectId ?? null}
+          saveTargets={{ clients: clientOptions, projects: projectOptions }}
         />
 
         <aside className="hidden flex-col gap-2 lg:flex">

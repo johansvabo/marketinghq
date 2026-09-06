@@ -6,6 +6,7 @@ import { isSignedIn } from "@/lib/auth";
 import { runBrain } from "@/lib/ai/brain";
 import { getAgent } from "@/lib/ai/agents";
 import { describeAiError } from "@/lib/ai/client";
+import { threadContext } from "@/lib/ai/thread-context";
 
 export const runtime = "nodejs";
 export const maxDuration = 250;
@@ -18,11 +19,14 @@ export const maxDuration = 250;
 export async function POST(request: Request) {
   if (!(await isSignedIn())) return new Response("Unauthorized", { status: 401 });
 
-  const { threadId, message, context, agentKey } = (await request.json()) as {
+  const { threadId, message, context, agentKey, clientId, projectId, assignmentId } = (await request.json()) as {
     threadId?: string;
     message: string;
     context?: string;
     agentKey?: string;
+    clientId?: string | null;
+    projectId?: string | null;
+    assignmentId?: string | null;
   };
 
   if (!message?.trim()) return new Response("Empty message", { status: 400 });
@@ -31,7 +35,15 @@ export async function POST(request: Request) {
   if (!thread) {
     [thread] = await db
       .insert(chatThreads)
-      .values({ title: message.trim().slice(0, 60), agentKey: agentKey ?? null })
+      .values({
+        title: message.trim().slice(0, 60),
+        agentKey: agentKey ?? null,
+        // What the conversation is about, kept on the thread so it survives
+        // a reload and so the context can be rebuilt server-side each turn.
+        clientId: clientId || null,
+        projectId: projectId || null,
+        assignmentId: assignmentId || null,
+      })
       .returning();
   }
 
@@ -63,7 +75,9 @@ export async function POST(request: Request) {
       try {
         const result = await runBrain({
           messages,
-          systemExtra: context,
+          // The thread's own links decide the context; anything the page adds
+          // is appended rather than trusted in its place.
+          systemExtra: [await threadContext(thread), context].filter(Boolean).join("\n\n") || undefined,
           agent: getAgent(agentKey ?? thread.agentKey),
           onEvent: (event) => {
             if (event.type === "text") send("text", { text: event.text });

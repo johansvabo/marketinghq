@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { ArrowLeft, FileText, Lightbulb, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, FileText, Lightbulb, MessageSquare, Sparkles, Users } from "lucide-react";
 import { db } from "@/lib/db";
-import { clients, documents, insights, projects, reportRuns, stakeholders, tasks } from "@/lib/db/schema";
+import { AGENTS, type AgentKey } from "@/lib/ai/agents";
+import { chatThreads, clients, documents, insights, projects, reportRuns, stakeholders, tasks } from "@/lib/db/schema";
 import { relativeDay } from "@/lib/dates";
 import { compare, formatMetric, metricLabel, SOURCE_LABEL } from "@/lib/metrics";
 import { Card, CardTitle, Chip, Delta, Empty, PageHeader, Progress, StatStrip, Zone } from "@/components/ui";
@@ -33,7 +34,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   const month = monthKey(new Date());
   const [monthSummary, monthEntries] = await Promise.all([clientMonth(client, month), clientEntries(id, month)]);
 
-  const [projectRows, openTasks, docs, clientInsights, people, upcomingReports, movement] = await Promise.all([
+  const [projectRows, openTasks, docs, clientInsights, people, upcomingReports, movement, conversations] = await Promise.all([
     db
       .select({
         project: projects,
@@ -59,6 +60,12 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
       .orderBy(asc(reportRuns.dueAt))
       .limit(3),
     compare({ clientId: id, days: 28 }),
+    db
+      .select()
+      .from(chatThreads)
+      .where(eq(chatThreads.clientId, id))
+      .orderBy(desc(chatThreads.updatedAt))
+      .limit(8),
   ]);
 
   const headline = movement.filter((m) => ["spend", "conversions", "sessions", "cost_per_conversion"].includes(m.metric));
@@ -245,6 +252,36 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
           <PeopleCard clientId={id} people={people} />
 
           <ClientBilling client={client} />
+
+          {conversations.length > 0 && (
+            <Card>
+              <CardTitle action={<Link href="/brain" className="btn btn-ghost btn-sm">New</Link>}>
+                <span className="inline-flex items-center gap-1.5">
+                  <MessageSquare size={12} />
+                  Conversations
+                </span>
+              </CardTitle>
+              <ul className="flex flex-col gap-1">
+                {conversations.map((thread) => {
+                  const agent = thread.agentKey ? AGENTS[thread.agentKey as AgentKey] : null;
+                  return (
+                    <li key={thread.id}>
+                      <Link
+                        href={agent ? `/team/${agent.key}?thread=${thread.id}` : `/brain?thread=${thread.id}`}
+                        className="block rounded-[8px] px-2 py-1.5 transition-colors hover:bg-[var(--raised)]"
+                      >
+                        <span className="line-clamp-1 text-[12.5px]">{thread.title}</span>
+                        <span className="text-[11px] text-muted">
+                          {agent ? `${agent.name} · ` : "Brain · "}
+                          {relativeDay(thread.updatedAt)}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          )}
 
           {upcomingReports.length > 0 && (
             <Card>

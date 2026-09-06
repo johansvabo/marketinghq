@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assignments, clients, contributions, projects, type Assignment } from "@/lib/db/schema";
+import { assignments, chatMessages, chatThreads, clients, contributions, projects, type Assignment } from "@/lib/db/schema";
 import { isConfigured } from "@/lib/env";
 import { AGENTS, ORDERED_AGENTS, agentRank, getAgent, type AgentKey } from "./agents";
 import { runBrain } from "./brain";
@@ -344,6 +344,32 @@ export async function recentAssignments(limit = 20) {
     total: Number(byId.get(r.assignment.id)?.total ?? 0),
     done: Number(byId.get(r.assignment.id)?.done ?? 0),
   }));
+}
+
+/** Follow-up conversations on this assignment, keyed by who they are with. */
+export async function assignmentDiscussions(assignmentId: string) {
+  const threads = await db
+    .select()
+    .from(chatThreads)
+    .where(eq(chatThreads.assignmentId, assignmentId))
+    .orderBy(asc(chatThreads.createdAt));
+
+  const byAgent = new Map<string, { threadId: string; messages: { role: "user" | "assistant"; content: string }[] }>();
+
+  for (const thread of threads) {
+    if (!thread.agentKey || byAgent.has(thread.agentKey)) continue;
+    const messages = await db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.threadId, thread.id))
+      .orderBy(asc(chatMessages.createdAt));
+    byAgent.set(thread.agentKey, {
+      threadId: thread.id,
+      messages: messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+    });
+  }
+
+  return byAgent;
 }
 
 export async function assignmentWithWork(id: string) {

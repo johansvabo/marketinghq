@@ -28,14 +28,20 @@ export default async function BrainPage({
 
   if (tab === "library") return <Library params={params} />;
 
-  const [threads, history, clientRows, projectRows] = await Promise.all([
+  const [threads, history, clientRows, projectRows, threadRows] = await Promise.all([
     db.select().from(chatThreads).orderBy(desc(chatThreads.updatedAt)).limit(12),
     params.thread
       ? db.select().from(chatMessages).where(eq(chatMessages.threadId, params.thread)).orderBy(chatMessages.createdAt)
       : Promise.resolve([]),
     db.select({ id: clients.id, name: clients.name }).from(clients).where(eq(clients.status, "active")).orderBy(clients.name),
     db.select({ id: projects.id, name: projects.name, clientId: projects.clientId }).from(projects).orderBy(projects.name),
+    params.thread
+      ? db.select().from(chatThreads).where(eq(chatThreads.id, params.thread)).limit(1)
+      : Promise.resolve([]),
   ]);
+
+  const threadRow = threadRows[0];
+  const clientNameFor = new Map(clientRows.map((c) => [c.id, c.name]));
 
   return (
     <>
@@ -49,6 +55,9 @@ export default async function BrainPage({
           suggestions={SUGGESTIONS}
           aiReady={isConfigured.anthropic()}
           saveTargets={{ clients: clientRows, projects: projectRows }}
+          about={{ clients: clientRows, projects: projectRows }}
+          clientId={history.length > 0 ? (threadRow?.clientId ?? null) : null}
+          projectId={history.length > 0 ? (threadRow?.projectId ?? null) : null}
         />
 
         <aside className="hidden flex-col gap-2 lg:flex">
@@ -67,7 +76,10 @@ export default async function BrainPage({
                 style={params.thread === thread.id ? { background: "var(--raised)" } : undefined}
               >
                 <span className="line-clamp-2">{thread.title}</span>
-                <span className="mt-0.5 block text-[11px] text-muted">{relativeDay(thread.updatedAt)}</span>
+                <span className="mt-0.5 block text-[11px] text-muted">
+                  {clientNameFor.get(thread.clientId ?? "") ? `${clientNameFor.get(thread.clientId ?? "")} · ` : ""}
+                  {relativeDay(thread.updatedAt)}
+                </span>
               </Link>
             ))
           )}

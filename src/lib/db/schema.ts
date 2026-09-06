@@ -551,9 +551,13 @@ export const chatThreads = sqliteTable("chat_threads", {
   agentKey: text("agent_key"),
   clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
   projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  /** Set when this is a follow-up conversation about a team assignment. */
+  assignmentId: text("assignment_id").references(() => assignments.id, { onDelete: "cascade" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+export type ChatThread = typeof chatThreads.$inferSelect;
 
 export const chatMessages = sqliteTable(
   "chat_messages",

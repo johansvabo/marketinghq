@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowUp, Loader2, Sparkles, Square } from "lucide-react";
 import { Markdown } from "./markdown";
 import { SaveAnswer, type SaveTarget } from "./save-answer";
+import { setThreadContext } from "@/server/actions";
 
 type ChatMessage = { role: "user" | "assistant"; content: string; tools?: string[] };
 
@@ -31,6 +32,11 @@ export function BrainChat({
   emptyTitle,
   emptyHint,
   saveTargets,
+  clientId,
+  projectId,
+  assignmentId,
+  compact = false,
+  about,
 }: {
   initial: ChatMessage[];
   threadId?: string;
@@ -43,11 +49,21 @@ export function BrainChat({
   emptyHint?: string;
   /** Clients and projects an answer can be filed under. */
   saveTargets?: SaveTarget;
+  /** What a new conversation is about. Stored on the thread when it is created. */
+  clientId?: string | null;
+  projectId?: string | null;
+  assignmentId?: string | null;
+  /** Sits inside a card rather than owning the viewport. */
+  compact?: boolean;
+  /** Lets the conversation be filed under a client, so it can be found again. */
+  about?: { clients: { id: string; name: string }[]; projects: { id: string; name: string; clientId: string | null }[] };
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>(initial);
   const [input, setInput] = useState("");
   const [threadId, setThreadId] = useState(initialThreadId);
+  const [aboutClient, setAboutClient] = useState(clientId ?? "");
+  const [aboutProject, setAboutProject] = useState(projectId ?? "");
   const [busy, setBusy] = useState(false);
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +90,14 @@ export function BrainChat({
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ threadId, message: text, agentKey }),
+        body: JSON.stringify({
+          threadId,
+          message: text,
+          agentKey,
+          assignmentId,
+          clientId: aboutClient || clientId || null,
+          projectId: aboutProject || projectId || null,
+        }),
         signal: controller.signal,
       });
 
@@ -138,7 +161,7 @@ export function BrainChat({
   }
 
   return (
-    <div className="flex h-[calc(100dvh-190px)] flex-col md:h-[calc(100dvh-150px)]">
+    <div className={compact ? "flex max-h-[70vh] min-h-[240px] flex-col" : "flex h-[calc(100dvh-190px)] flex-col md:h-[calc(100dvh-150px)]"}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-5 px-4 text-center">
@@ -213,6 +236,54 @@ export function BrainChat({
           </div>
         )}
       </div>
+
+      {about && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11.5px] text-muted">About</span>
+          <select
+            value={aboutClient}
+            onChange={(e) => {
+              const next = e.target.value;
+              setAboutClient(next);
+              setAboutProject("");
+              // Persist straight away once the thread exists; before that it
+              // rides along on the message that creates it.
+              if (threadId) void setThreadContext(threadId, next || null, null).then(() => router.refresh());
+            }}
+            className="input w-auto py-1 text-[11.5px]"
+            aria-label="Which client this conversation is about"
+          >
+            <option value="">No client</option>
+            {about.clients.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+
+          {aboutClient && (
+            <select
+              value={aboutProject}
+              onChange={(e) => {
+                const next = e.target.value;
+                setAboutProject(next);
+                if (threadId) void setThreadContext(threadId, aboutClient || null, next || null).then(() => router.refresh());
+              }}
+              className="input w-auto py-1 text-[11.5px]"
+              aria-label="Which project this conversation is about"
+            >
+              <option value="">Any project</option>
+              {about.projects.filter((p) => p.clientId === aboutClient).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          )}
+
+          {aboutClient && (
+            <span className="text-[11px] text-muted">
+              They will read this client&rsquo;s material before answering.
+            </span>
+          )}
+        </div>
+      )}
 
       {error && (
         <p className="mb-2 rounded-[10px] px-3 py-2 text-[12.5px]" style={{ background: "color-mix(in oklch, var(--color-urgent) 12%, transparent)", color: "var(--color-urgent)" }}>

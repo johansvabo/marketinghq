@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import {
   assignments,
   briefings,
+  chatThreads,
   clients,
   connections,
   documents,
@@ -35,6 +36,32 @@ import { createAssignment } from "@/lib/ai/assignments";
 function refresh(...paths: string[]) {
   // Callers interpolate ids that may be null, which leaves a bare "/projects/".
   for (const path of ["/", ...paths]) if (!path.endsWith("/") || path === "/") revalidatePath(path);
+}
+
+/* ------------------------------------------------------------ conversations */
+
+/** What a conversation is about — the thing that makes it findable later. */
+export async function setThreadContext(threadId: string, clientId: string | null, projectId: string | null) {
+  await db
+    .update(chatThreads)
+    .set({ clientId: clientId || null, projectId: projectId || null, updatedAt: new Date() })
+    .where(eq(chatThreads.id, threadId));
+  refresh("/brain", "/team", `/clients/${clientId ?? ""}`);
+  return { ok: true as const };
+}
+
+export async function renameThread(threadId: string, title: string) {
+  const clean = title.trim().slice(0, 90);
+  if (!clean) return { ok: false as const, error: "Give it a name." };
+  await db.update(chatThreads).set({ title: clean, updatedAt: new Date() }).where(eq(chatThreads.id, threadId));
+  refresh("/brain", "/team");
+  return { ok: true as const };
+}
+
+export async function deleteThread(threadId: string) {
+  await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
+  refresh("/brain", "/team");
+  return { ok: true as const };
 }
 
 /* -------------------------------------------------------- team assignments */

@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { assignmentWithWork } from "@/lib/ai/assignments";
+import { assignmentDiscussions, assignmentWithWork } from "@/lib/ai/assignments";
+import { Discuss } from "@/components/discuss";
 import { AGENTS, type AgentKey } from "@/lib/ai/agents";
 import { Card, CardTitle, Chip, Empty, PageHeader } from "@/components/ui";
 import { Markdown } from "@/components/markdown";
@@ -30,6 +31,7 @@ const STATUS_TONE = {
 export default async function AssignmentPage({ params }: { params: Promise<{ id: string }> }) {
   const row = await assignmentWithWork((await params).id);
   if (!row) notFound();
+  const talk = await assignmentDiscussions(row.assignment.id);
 
   const { assignment, client, project, work } = row;
   const outstanding = work.filter((w) => w.status === "pending" || w.status === "running").length;
@@ -91,6 +93,17 @@ export default async function AssignmentPage({ params }: { params: Promise<{ id:
             </span>
           </CardTitle>
           <Markdown source={assignment.synthesis} />
+          {reviewer && (
+            <Discuss
+              agentName={AGENTS[reviewer.agentKey as AgentKey]?.name ?? "the reviewer"}
+              agentKey={reviewer.agentKey}
+              assignmentId={assignment.id}
+              clientId={assignment.clientId}
+              projectId={assignment.projectId}
+              threadId={talk.get(reviewer.agentKey)?.threadId}
+              initial={talk.get(reviewer.agentKey)?.messages ?? []}
+            />
+          )}
         </Card>
       ) : (
         <Card className="mb-4">
@@ -137,6 +150,18 @@ export default async function AssignmentPage({ params }: { params: Promise<{ id:
                       }`
                     : "Waiting their turn."}
                 </p>
+              )}
+
+              {item.body && agent && (
+                <Discuss
+                  agentName={agent.name}
+                  agentKey={item.agentKey}
+                  assignmentId={assignment.id}
+                  clientId={assignment.clientId}
+                  projectId={assignment.projectId}
+                  threadId={talk.get(item.agentKey)?.threadId}
+                  initial={talk.get(item.agentKey)?.messages ?? []}
+                />
               )}
             </Card>
           );
