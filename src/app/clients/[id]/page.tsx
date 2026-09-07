@@ -14,6 +14,7 @@ import { DocumentList } from "@/components/document-list";
 import { TeamWork } from "@/components/team-work";
 import { ClientNotes } from "@/components/client-notes";
 import { PeopleCard } from "@/components/people-card";
+import { ViewTabs } from "@/components/view-tabs";
 import { TimeTracker } from "@/components/time-tracker";
 import { ClientBilling } from "@/components/client-billing";
 import { clientEntries, clientMonth, formatMoney, monthKey } from "@/lib/billing";
@@ -24,8 +25,15 @@ export const dynamic = "force-dynamic";
 const OPEN = ["todo", "doing", "waiting"];
 const HEALTH_TONE = { on_track: "neutral", at_risk: "warn", off_track: "urgent" } as const;
 
-export default async function ClientPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClientPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const { id } = await params;
+  const tab = (await searchParams).tab ?? "overview";
 
   const [client] = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
   if (!client) notFound();
@@ -78,6 +86,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   const myDocs = docs.filter((d) => d.source !== "agent" && d.status !== "archived");
   const teamDocs = docs.filter((d) => d.source === "agent");
   const liveInsights = clientInsights.filter((i) => i.status !== "archived");
+  const liveTeamCount = teamDocs.filter((d) => d.status !== "archived").length;
 
   return (
     <>
@@ -130,82 +139,34 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
           ]}
         />
       </div>
+      <ViewTabs
+        base={`/clients/${id}`}
+        current={tab}
+        tabs={[
+          { key: "overview", label: "Overview" },
+          { key: "library", label: "Library", count: myDocs.length },
+          { key: "team", label: "Team output", count: liveTeamCount },
+          { key: "insights", label: "What we know", count: liveInsights.length },
+        ]}
+      />
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <div className="flex flex-col gap-4">
-          <Zone
-            title="Source material"
-            icon={<FileText size={14} strokeWidth={2.2} />}
-            tone="info"
-            count={myDocs.length || undefined}
-            aside="what you uploaded or wrote"
-          >
-            <DocumentList
-              clientId={id}
-              projects={projectRows.map((r) => ({ id: r.project.id, name: r.project.name }))}
-              documents={myDocs}
-              storageOn={storage.ok}
-              canDirect={canDirectUpload()}
-              access={blobAccess()}
-            />
-          </Zone>
+      {/* One view at a time, one column. Two parallel stacks of cards read as
+          a pile, and the wide one pushed the page sideways on a phone. */}
+      <div className="flex max-w-[860px] flex-col gap-4">
+        {tab === "overview" && (
+          <>
+            <ClientNotes clientId={id} notes={client.notes} />
 
-          <Zone
-            title="Work the team produced"
-            icon={<Sparkles size={14} strokeWidth={2.2} />}
-            tone="brand"
-            count={teamDocs.filter((d) => d.status !== "archived").length || undefined}
-            aside="drafts and proposals, not ground truth"
-          >
-            <TeamWork
-              documents={teamDocs}
-              projects={projectRows.map((r) => ({ id: r.project.id, name: r.project.name }))}
-              showArchived={false}
-            />
-          </Zone>
+{openTasks.length > 0 && (
+            <Card>
+              <CardTitle action={<Link href={`/tasks?client=${id}`} className="btn btn-ghost btn-sm">All</Link>}>
+                Open work
+              </CardTitle>
+              <TaskList items={openTasks.map((t) => ({ task: t.task, projectName: t.projectName }))} emptyText="" />
+            </Card>
+          )}
 
-          <Zone
-            title="What we know"
-            icon={<Lightbulb size={14} strokeWidth={2.2} />}
-            tone="good"
-            count={liveInsights.length || undefined}
-            aside={
-              <span className="flex items-center gap-2">
-                <Link href={`/brain?tab=library&client=${id}`} className="underline">all</Link>
-                <Link href={`/brain/new?client=${id}`} className="underline">capture</Link>
-              </span>
-            }
-          >
-            {liveInsights.length === 0 ? (
-              <Card>
-                <Empty
-                  title="Nothing captured yet"
-                  hint="Findings, decisions, what they respond to. Short entries you will want back in six months."
-                  action={
-                    <div className="flex gap-2">
-                      <Link href={`/brain/new?client=${id}`} className="btn btn-sm btn-primary">Capture one</Link>
-                      <Link href="/brain/import" className="btn btn-sm">Import notes</Link>
-                    </div>
-                  }
-                />
-              </Card>
-            ) : (
-              <div className="flex flex-col gap-2.5">
-                {/* Pinned first, then the most recent — the rest live in the library
-                    so this panel stays readable as the client's history grows. */}
-                {liveInsights.slice(0, 6).map((entry) => (
-                  <InsightRow key={entry.id} insight={entry} clientName={client.name} clientColor={client.color} />
-                ))}
-                {liveInsights.length > 6 && (
-                  <Link href={`/brain?tab=library&client=${id}`} className="btn btn-sm self-start">
-                    All {liveInsights.length} for {client.name}
-                  </Link>
-                )}
-              </div>
-            )}
-          </Zone>
-
-          {projectRows.length > 0 && (
+{projectRows.length > 0 && (
             <Card>
               <CardTitle action={<Link href={`/projects?client=${id}`} className="btn btn-ghost btn-sm">All</Link>}>
                 Projects
@@ -236,24 +197,61 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               </div>
             </Card>
           )}
-        </div>
 
-        <div className="flex flex-col gap-3 rounded-[16px] p-3 md:p-3.5" style={{ background: "var(--sunken)" }}>
-          <ClientNotes clientId={id} notes={client.notes} />
+            <TimeTracker
+              clientId={id}
+              entries={monthEntries}
+              summary={monthSummary}
+              projects={projectRows.map((r) => ({ id: r.project.id, name: r.project.name }))}
+              month={month}
+            />
 
-          <TimeTracker
-            clientId={id}
-            entries={monthEntries}
-            summary={monthSummary}
-            projects={projectRows.map((r) => ({ id: r.project.id, name: r.project.name }))}
-            month={month}
-          />
+            <PeopleCard clientId={id} people={people} />
 
-          <PeopleCard clientId={id} people={people} />
+            <ClientBilling client={client} />
 
-          <ClientBilling client={client} />
+{upcomingReports.length > 0 && (
+            <Card>
+              <CardTitle>Reports due</CardTitle>
+              <ul className="flex flex-col gap-1.5">
+                {upcomingReports.map((run) => (
+                  <li key={run.id}>
+                    <Link href={`/reports/${run.id}`} className="flex items-center gap-2 rounded-[9px] px-1.5 py-1.5 hover:bg-[var(--raised)]">
+                      <span className="flex-1 truncate text-[12.5px]">
+                        {run.periodStart} → {run.periodEnd}
+                      </span>
+                      <Chip tone={run.dueAt < new Date() ? "urgent" : "neutral"}>{relativeDay(run.dueAt)}</Chip>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
-          {conversations.length > 0 && (
+{headline.length > 0 && (
+            <Card>
+              <CardTitle action={<Link href={`/insights?client=${id}`} className="btn btn-ghost btn-sm">More</Link>}>
+                Last 28 days
+              </CardTitle>
+              <dl className="flex flex-col gap-2">
+                {headline.slice(0, 6).map((row) => (
+                  <div key={`${row.source}-${row.metric}`} className="flex items-baseline gap-2">
+                    <dt className="text-[11.5px] text-muted">
+                      {SOURCE_LABEL[row.source] ?? row.source} {metricLabel(row.metric)}
+                    </dt>
+                    <dd className="ml-auto flex items-baseline gap-2">
+                      <span className="text-[13px] font-semibold tabular-nums">
+                        {formatMetric(row.metric, row.current, client.currency)}
+                      </span>
+                      <Delta pct={row.changePct} goodDirection={row.metric === "cost_per_conversion" ? "down" : "none"} />
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </Card>
+          )}
+
+{conversations.length > 0 && (
             <Card>
               <CardTitle action={<Link href="/brain" className="btn btn-ghost btn-sm">New</Link>}>
                 <span className="inline-flex items-center gap-1.5">
@@ -282,57 +280,79 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               </ul>
             </Card>
           )}
+          </>
+        )}
 
-          {upcomingReports.length > 0 && (
-            <Card>
-              <CardTitle>Reports due</CardTitle>
-              <ul className="flex flex-col gap-1.5">
-                {upcomingReports.map((run) => (
-                  <li key={run.id}>
-                    <Link href={`/reports/${run.id}`} className="flex items-center gap-2 rounded-[9px] px-1.5 py-1.5 hover:bg-[var(--raised)]">
-                      <span className="flex-1 truncate text-[12.5px]">
-                        {run.periodStart} → {run.periodEnd}
-                      </span>
-                      <Chip tone={run.dueAt < new Date() ? "urgent" : "neutral"}>{relativeDay(run.dueAt)}</Chip>
-                    </Link>
-                  </li>
+        {tab === "library" && (
+          <Zone
+            title="Your library"
+            icon={<FileText size={14} strokeWidth={2.2} />}
+            tone="info"
+            count={myDocs.length || undefined}
+            aside="what you uploaded or wrote"
+          >
+            <DocumentList
+              clientId={id}
+              projects={projectRows.map((r) => ({ id: r.project.id, name: r.project.name }))}
+              documents={myDocs}
+              storageOn={storage.ok}
+              canDirect={canDirectUpload()}
+              access={blobAccess()}
+            />
+          </Zone>
+        )}
+
+        {tab === "team" && (
+          <Zone
+            title="The team's library"
+            icon={<Sparkles size={14} strokeWidth={2.2} />}
+            tone="brand"
+            count={liveTeamCount || undefined}
+            aside="drafts and proposals, not ground truth"
+          >
+            <TeamWork
+              documents={teamDocs}
+              projects={projectRows.map((r) => ({ id: r.project.id, name: r.project.name }))}
+              showArchived={false}
+            />
+          </Zone>
+        )}
+
+        {tab === "insights" && (
+          <Zone
+            title="What we know"
+            icon={<Lightbulb size={14} strokeWidth={2.2} />}
+            tone="good"
+            count={liveInsights.length || undefined}
+            aside={
+              <span className="flex items-center gap-2">
+                <Link href={`/brain?tab=library&client=${id}`} className="underline">all</Link>
+                <Link href={`/brain/new?client=${id}`} className="underline">capture</Link>
+              </span>
+            }
+          >
+            {liveInsights.length === 0 ? (
+              <Card>
+                <Empty
+                  title="Nothing captured yet"
+                  hint="Findings, decisions, what they respond to. Short entries you will want back in six months."
+                  action={
+                    <div className="flex gap-2">
+                      <Link href={`/brain/new?client=${id}`} className="btn btn-sm btn-primary">Capture one</Link>
+                      <Link href="/brain/import" className="btn btn-sm">Import notes</Link>
+                    </div>
+                  }
+                />
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {liveInsights.map((entry) => (
+                  <InsightRow key={entry.id} insight={entry} clientName={client.name} clientColor={client.color} />
                 ))}
-              </ul>
-            </Card>
-          )}
-
-          {headline.length > 0 && (
-            <Card>
-              <CardTitle action={<Link href={`/insights?client=${id}`} className="btn btn-ghost btn-sm">More</Link>}>
-                Last 28 days
-              </CardTitle>
-              <dl className="flex flex-col gap-2">
-                {headline.slice(0, 6).map((row) => (
-                  <div key={`${row.source}-${row.metric}`} className="flex items-baseline gap-2">
-                    <dt className="text-[11.5px] text-muted">
-                      {SOURCE_LABEL[row.source] ?? row.source} {metricLabel(row.metric)}
-                    </dt>
-                    <dd className="ml-auto flex items-baseline gap-2">
-                      <span className="text-[13px] font-semibold tabular-nums">
-                        {formatMetric(row.metric, row.current, client.currency)}
-                      </span>
-                      <Delta pct={row.changePct} goodDirection={row.metric === "cost_per_conversion" ? "down" : "none"} />
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </Card>
-          )}
-
-          {openTasks.length > 0 && (
-            <Card>
-              <CardTitle action={<Link href={`/tasks?client=${id}`} className="btn btn-ghost btn-sm">All</Link>}>
-                Open work
-              </CardTitle>
-              <TaskList items={openTasks.map((t) => ({ task: t.task, projectName: t.projectName }))} emptyText="" />
-            </Card>
-          )}
-        </div>
+              </div>
+            )}
+          </Zone>
+        )}
       </div>
     </>
   );

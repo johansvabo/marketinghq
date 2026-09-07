@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { desc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, projects } from "@/lib/db/schema";
 import { format } from "@/lib/dates";
@@ -88,8 +88,11 @@ export const wantsWeb = (agent: Agent | null | undefined): boolean => (agent ? a
 /** Facts about the current state of the world, refreshed on every request. */
 async function runtimeContext(): Promise<string> {
   const [clientRows, projectRows] = await Promise.all([
-    db.select().from(clients).where(eq(clients.status, "active")),
-    db.select().from(projects).where(eq(projects.status, "active")).orderBy(desc(projects.updatedAt)).limit(25),
+    db.select().from(clients).where(eq(clients.status, "active")).orderBy(asc(clients.name)),
+    // Ordered by name, not updatedAt: this text sits ahead of the whole
+    // conversation in the cached prefix, and re-sorting it on every project
+    // touch would invalidate the cache on essentially every request.
+    db.select().from(projects).where(eq(projects.status, "active")).orderBy(asc(projects.name)).limit(25),
   ]);
 
   return [
@@ -131,15 +134,24 @@ export async function runBrain(opts: {
   const toolCalls: BrainResult["toolCalls"] = [];
   const maxTurns = opts.maxTurns ?? 8;
 
+  /*
+   * Ordered by how often each part changes, because caching is a prefix match:
+   * anything above a change is reusable, everything below it is not. The
+   * persona never changes, a thread's context is fixed for that conversation,
+   * and the runtime block moves daily — so it goes last, with the breakpoints
+   * on the two stable parts above it.
+   */
   const system: Anthropic.TextBlockParam[] = [
-    // Stable prefix first so it stays cacheable across every request.
     {
       type: "text",
       text: opts.agent ? agentSystemPrompt(opts.agent) : brainSystemPrompt(),
       cache_control: { type: "ephemeral" },
     },
-    { type: "text", text: await runtimeContext() },
   ];
+  if (opts.systemExtra) {
+    system.push({ type: "text", text: opts.systemExtra, cache_control: { type: "ephemeral" } });
+  }
+  system.push({ type: "text", text: await runtimeContext() });
 
   /*
    * Web search is on by default: for a specialist it is opt-in per agent
@@ -151,7 +163,6 @@ export async function runBrain(opts: {
   const tools: Anthropic.ToolUnion[] = wantsWeb(opts.agent)
     ? [...BRAIN_TOOLS, { type: "web_search_20260209", name: "web_search", max_uses: 6 } as Anthropic.ToolUnion]
     : [...BRAIN_TOOLS];
-  if (opts.systemExtra) system.push({ type: "text", text: opts.systemExtra });
 
   let finalText = "";
 
@@ -180,6 +191,13 @@ export async function runBrain(opts: {
         system,
         messages,
         tools,
+        /*
+         * The loop re-sends the whole conversation every turn — ten turns of a
+         * specialist reading documents means the same history is paid for ten
+         * times over. This moves the breakpoint to the end of the history as it
+         * grows, so each turn reads the previous one instead of reprocessing it.
+         */
+        cache_control: { type: "ephemeral" },
         ...(containerId ? { container: containerId } : {}),
         thinking: { type: "adaptive" },
         output_config: { effort: "high" },
@@ -198,6 +216,17 @@ export async function runBrain(opts: {
       }
     }
     containerId = response.container?.id ?? containerId;
+
+    /*
+     * The only way to know caching is working is to look: a run of turns where
+     * cache_read stays at 0 means something above the breakpoint is changing
+     * between requests. Logged rather than surfaced — it is a deployment
+     * question, not something the user needs on screen.
+     */
+    const u = response.usage;
+    console.log(
+      `[claude] turn=${turn} model=${model} in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`,
+    );
 
     const text = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
@@ -273,6 +302,7 @@ export async function generate(opts: {
       max_tokens: opts.maxTokens ?? 16_000,
       system: opts.system,
       messages: [{ role: "user", content: opts.prompt }],
+      cache_control: { type: "ephemeral" },
       thinking: { type: "adaptive" },
       output_config: { effort: opts.effort ?? "medium" },
     });

@@ -259,15 +259,12 @@ export function DocumentList({
 
                     {doc.pinned && <Pin size={11} style={{ color: "var(--color-brand)" }} fill="currentColor" />}
 
-                    {!projectId && projectPicker(doc)}
-
                     <span className="hidden shrink-0 text-[11px] text-muted sm:inline">
                       {doc.fileSize ? `${Math.round(doc.fileSize / 1024)} KB · ` : ""}
                       {doc.updatedAt.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                     </span>
 
-                    <div className="flex shrink-0 items-center gap-0.5 row-actions">
-                      {projectId && projectPicker(doc)}
+                    <div className="hidden shrink-0 items-center gap-0.5 row-actions sm:flex">
                       {doc.filePathname && (
                         <a
                           href={`/api/documents/${doc.id}/file`}

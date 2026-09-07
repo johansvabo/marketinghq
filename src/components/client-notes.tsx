@@ -9,7 +9,12 @@ import { Card, CardTitle } from "./ui";
 export function ClientNotes({ clientId, notes }: { clientId: string; notes: string | null }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  // Long enough to be worth collapsing; short enough that clamping it would
+  // only hide a line and cost a click.
+  const long = (notes?.length ?? 0) > 220;
 
   function save(formData: FormData) {
     startTransition(async () => {
@@ -49,7 +54,22 @@ export function ClientNotes({ clientId, notes }: { clientId: string; notes: stri
           </div>
         </form>
       ) : notes ? (
-        <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-soft">{notes}</p>
+        <>
+          <p
+            className={`whitespace-pre-wrap text-[12.5px] leading-relaxed text-soft ${long && !expanded ? "line-clamp-3" : ""}`}
+          >
+            {notes}
+          </p>
+          {long && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-1.5 text-[11.5px] underline"
+              style={{ color: "var(--ink-muted)" }}
+            >
+              {expanded ? "Show less" : "Read all of it"}
+            </button>
+          )}
+        </>
       ) : (
         <p className="text-[12.5px] leading-relaxed text-muted">
           The two lines you would tell a colleague taking this over. It goes to Claude with every question about them.
