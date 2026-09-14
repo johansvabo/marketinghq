@@ -4,7 +4,8 @@ import { Globe } from "lucide-react";
 import { db } from "@/lib/db";
 import { chatThreads } from "@/lib/db/schema";
 import { AGENT_LIST } from "@/lib/ai/agents";
-import { ASSIGNABLE, REVIEWER, recentAssignments } from "@/lib/ai/assignments";
+import { ASSIGNABLE, REVIEWER, pendingProposals, recentAssignments } from "@/lib/ai/assignments";
+import { ProposedBriefs } from "@/components/proposed-briefs";
 import { isConfigured } from "@/lib/env";
 import { relativeDay } from "@/lib/dates";
 import { getBriefingConfig, recentBriefings } from "@/lib/ai/briefings";
@@ -22,7 +23,7 @@ export const maxDuration = 300;
 export const metadata = { title: "Team" };
 
 export default async function TeamPage() {
-  const [threads, counts, config, feed, activeClients, assignmentRows, clientOptions, projectOptions] = await Promise.all([
+  const [threads, counts, config, feed, activeClients, assignmentRows, proposals, clientOptions, projectOptions] = await Promise.all([
     db.select().from(chatThreads).where(isNotNull(chatThreads.agentKey)).orderBy(desc(chatThreads.updatedAt)).limit(8),
     db
       .select({ agentKey: chatThreads.agentKey, n: sql<number>`count(*)` })
@@ -33,6 +34,7 @@ export default async function TeamPage() {
     recentBriefings(30),
     db.select({ id: clients.id }).from(clients).where(eq(clients.status, "active")),
     recentAssignments(8),
+    pendingProposals(),
     db.select({ id: clients.id, name: clients.name }).from(clients).where(eq(clients.status, "active")).orderBy(clients.name),
     db.select({ id: projects.id, name: projects.name, clientId: projects.clientId }).from(projects).orderBy(projects.name),
   ]);
@@ -55,6 +57,8 @@ export default async function TeamPage() {
           ) : null
         }
       />
+
+      <ProposedBriefs proposals={proposals} />
 
       {assignmentRows.length > 0 && (
         <section className="mb-4">

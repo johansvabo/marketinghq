@@ -60,7 +60,7 @@ export default async function TodayPage() {
               label: "Overdue",
               value: picture.overdue.length,
               tone: picture.overdue.length > 0 ? "urgent" : "good",
-              hint: picture.overdue.length === 0 ? "all clear" : "clear or kill first",
+              hint: picture.overdue.length === 0 ? "all clear" : "did it, later, or not doing",
             },
             {
               label: "Booked today",
@@ -133,7 +133,19 @@ export default async function TodayPage() {
                       {picture.overdue.length}
                     </span>
                   </div>
-                  <TaskList items={picture.overdue} emptyText="" />
+                  {/* A wall of red is the fastest way to make someone close the
+                      tab. Show the few that matter and offer to deal with the
+                      rest in one go, rather than listing all of them here. */}
+                  <TaskList items={picture.overdue.slice(0, 4)} emptyText="" />
+                  {picture.overdue.length > 4 && (
+                    <Link
+                      href="/tasks?view=triage"
+                      className="mt-1.5 flex items-center gap-1.5 px-2 py-1.5 text-[12px] underline"
+                      style={{ color: "var(--ink-muted)" }}
+                    >
+                      {picture.overdue.length - 4} more past their date — clear them in one go
+                    </Link>
+                  )}
                 </div>
               )}
 

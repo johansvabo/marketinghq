@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { assignments, chatMessages, chatThreads, clients, contributions, projects, type Assignment } from "@/lib/db/schema";
 import { isConfigured } from "@/lib/env";
@@ -31,6 +31,8 @@ export async function createAssignment(input: {
   clientId?: string | null;
   projectId?: string | null;
   agentKeys: AgentKey[];
+  /** "proposed" drafts it and waits — the brain never starts the team itself. */
+  status?: "running" | "proposed";
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const title = input.title.trim();
   const brief = input.brief.trim();
@@ -46,6 +48,7 @@ export async function createAssignment(input: {
       brief,
       clientId: input.clientId || null,
       projectId: input.projectId || null,
+      status: input.status ?? "running",
     })
     .returning();
 
@@ -221,6 +224,8 @@ export async function processAssignment(
 
   const [assignment] = await db.select().from(assignments).where(eq(assignments.id, assignmentId)).limit(1);
   if (!assignment) return { produced: 0, failed: 0, remaining: 0, done: true };
+  // Drafted but not approved: the specialists stay put.
+  if (assignment.status === "proposed") return { produced: 0, failed: 0, remaining: 0, done: false };
 
   let produced = 0;
   let failed = 0;
@@ -321,11 +326,44 @@ export async function processAssignment(
   return { produced, failed, remaining: outstanding, done, retryAfterMs };
 }
 
+/** Briefs the brain has drafted and left waiting for a yes. */
+export async function pendingProposals() {
+  const rows = await db
+    .select({ assignment: assignments, client: clients })
+    .from(assignments)
+    .leftJoin(clients, eq(assignments.clientId, clients.id))
+    .where(eq(assignments.status, "proposed"))
+    .orderBy(desc(assignments.createdAt))
+    .limit(5);
+
+  return Promise.all(
+    rows.map(async ({ assignment, client }) => {
+      const work = await db.select().from(contributions).where(eq(contributions.assignmentId, assignment.id));
+      return {
+        id: assignment.id,
+        title: assignment.title,
+        brief: assignment.brief,
+        clientName: client?.name ?? null,
+        agents: work
+          .filter((w) => !AGENTS[w.agentKey as AgentKey]?.runsLast)
+          .map((w) => ({
+            key: w.agentKey,
+            name: AGENTS[w.agentKey as AgentKey]?.name ?? w.agentKey,
+            colour: AGENTS[w.agentKey as AgentKey]?.colour ?? "#888",
+          })),
+      };
+    }),
+  );
+}
+
 export async function recentAssignments(limit = 20) {
   const rows = await db
     .select({ assignment: assignments, client: clients })
     .from(assignments)
     .leftJoin(clients, eq(assignments.clientId, clients.id))
+    // Proposals have their own card with an approve button; in this list they
+    // would read as work already under way.
+    .where(ne(assignments.status, "proposed"))
     .orderBy(desc(assignments.createdAt))
     .limit(limit);
 

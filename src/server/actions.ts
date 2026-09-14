@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   assignments,
@@ -84,6 +84,16 @@ export async function briefTheTeam(input: {
  * work takes minutes and a route handler can declare its own maxDuration,
  * where a server action only inherits its page's.
  */
+
+/** The go-ahead. Nothing the brain drafted runs until this is pressed. */
+export async function approveAssignment(assignmentId: string) {
+  await db
+    .update(assignments)
+    .set({ status: "running", updatedAt: new Date() })
+    .where(eq(assignments.id, assignmentId));
+  refresh("/team", "/brain", `/team/assignments/${assignmentId}`);
+  return { ok: true as const, id: assignmentId };
+}
 
 export async function deleteAssignment(assignmentId: string) {
   await db.delete(assignments).where(eq(assignments.id, assignmentId));
@@ -201,6 +211,27 @@ export async function updateTask(
 
   refresh("/tasks", "/projects");
   return { ok: true as const };
+}
+
+/**
+ * Clearing a backlog in one gesture. A wall of overdue work is mostly a sign
+ * that the dates were optimistic, not that the work stopped mattering — so
+ * moving all of it at once has to be as easy as moving one.
+ */
+export async function triageAll(taskIds: string[], action: "later" | "drop", days = 7) {
+  if (taskIds.length === 0) return { ok: true as const, count: 0 };
+
+  await db
+    .update(tasks)
+    .set(
+      action === "drop"
+        ? { status: "dropped", completedAt: new Date(), lastTouchedAt: new Date() }
+        : { dueDate: addDays(new Date(), days), lastTouchedAt: new Date() },
+    )
+    .where(inArray(tasks.id, taskIds));
+
+  refresh("/tasks", "/plan", "/projects");
+  return { ok: true as const, count: taskIds.length };
 }
 
 export async function snoozeTask(taskId: string, days: number) {

@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { revalidatePath } from "next/cache";
 import { and, desc, eq, gte, inArray, like, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -14,6 +15,25 @@ import {
 } from "@/lib/db/schema";
 import { addDays, iso, relativeDay, subDays } from "@/lib/dates";
 import { compare, formatMetric, metricLabel, totalsFor } from "@/lib/metrics";
+import { createAssignment } from "./assignments";
+import type { AgentKey } from "./agents";
+
+/*
+ * Cache invalidation is a nicety; the write already happened. Outside a request
+ * context revalidatePath throws, and a tool call must not fail — nor report
+ * failure for work it actually did — because a page hint could not be sent.
+ */
+function refresh(...paths: string[]) {
+  for (const path of paths) {
+    try {
+      revalidatePath(path);
+    } catch {
+      /* not in a request context — nothing to invalidate */
+    }
+  }
+}
+
+const refreshWork = () => refresh("/", "/tasks", "/plan", "/projects");
 
 /**
  * The tools Claude gets when it acts as the second brain. Read tools are
@@ -162,6 +182,74 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "close_tasks",
+    description:
+      "Mark tasks finished. Use this the moment they tell you they have done something — that is the whole point of telling you. Never reply that they have to tick it off themselves. Call list_work first to get the ids; match on what they described, and if you are unsure which of two tasks they mean, ask rather than closing both.",
+    input_schema: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "string" }, description: "Task ids from list_work." },
+        note: { type: "string", description: "Optional: what they said they did, kept on the task." },
+      },
+      required: ["ids"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "reschedule_tasks",
+    description:
+      "Move tasks to a new due date. Use it when they say something is slipping, when they ask to clear the decks, or when a pile of overdue work is plainly not getting done this week. Moving a date is not failure — an honest date is worth more than a red one.",
+    input_schema: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "string" } },
+        dueDate: { type: "string", description: "YYYY-MM-DD." },
+        dueInDays: { type: "number", description: "Days from today, as an alternative to dueDate." },
+      },
+      required: ["ids"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "drop_tasks",
+    description:
+      "Drop tasks that are not going to happen. They stay on the record as dropped rather than being deleted. Use when they say they are not doing something, or when you both agree it has been overtaken by events.",
+    input_schema: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "string" } },
+        reason: { type: "string" },
+      },
+      required: ["ids"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "propose_team_brief",
+    description:
+      "Draft a brief for the specialist team and put it in front of them for approval. It does NOT start the work — they see the brief, who would work it, and an approve button. Use this whenever the answer is really a piece of work for the team rather than something you should do in the chat. Say in your reply what you have proposed and that it is waiting for their go-ahead.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short name for the assignment." },
+        brief: {
+          type: "string",
+          description:
+            "The full instruction the team will work from. Write it as you would for a colleague: what to produce, for whom, the constraints, and what would make it good. Include what you already know from their records so nobody starts from scratch.",
+        },
+        client: { type: "string", description: "Client name or id, when it is for one." },
+        project: { type: "string" },
+        agents: {
+          type: "array",
+          items: { type: "string", enum: ["strategy", "performance", "linkedin", "seo", "market", "pipeline", "design"] },
+          description: "Which specialists should work it. Pick the ones whose discipline the brief actually needs; the reviewer is always added.",
+        },
+      },
+      required: ["title", "brief"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "create_project",
     description:
       "Create a project — a body of work with an end state, like a campaign, an audit, a launch, or a workstream agreed in a meeting. Use this when several tasks belong together under one outcome. Do not create a project for a single task.",
@@ -304,6 +392,14 @@ export async function runBrainTool(
       return saveDraft(input, context);
     case "create_task":
       return createTaskTool(input);
+    case "close_tasks":
+      return closeTasks(input);
+    case "reschedule_tasks":
+      return rescheduleTasks(input);
+    case "drop_tasks":
+      return dropTasks(input);
+    case "propose_team_brief":
+      return proposeTeamBrief(input);
     default:
       return { text: `Unknown tool: ${name}` };
   }
@@ -401,7 +497,7 @@ async function listWork(input: any): Promise<ToolResult> {
 
   const taskLines = rows.map(
     ({ task, clientName, projectName }) =>
-      `- [P${task.priority}] ${task.title} — ${task.status}${task.dueDate ? `, due ${relativeDay(task.dueDate)}` : ", no due date"}${
+      `- [${task.id}] [P${task.priority}] ${task.title} — ${task.status}${task.dueDate ? `, due ${relativeDay(task.dueDate)}` : ", no due date"}${
         clientName ? ` (${clientName}${projectName ? ` / ${projectName}` : ""})` : ""
       }${task.status === "waiting" && task.waitingOn ? ` — waiting on ${task.waitingOn}` : ""}`,
   );
@@ -714,6 +810,107 @@ async function saveDraft(input: any, context: ToolContext): Promise<ToolResult> 
       row.format === "html" ? ", and it renders as a layout they can open and print" : ""
     }. It is now searchable and the rest of the team can read it.`,
     data: row.id,
+  };
+}
+
+
+/** Tasks the ids actually matched, so nothing is reported that did not happen. */
+async function targets(ids: unknown) {
+  const list = Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+  if (list.length === 0) return [];
+  return db.select().from(tasks).where(inArray(tasks.id, list));
+}
+
+function report(found: { title: string }[], asked: unknown, verb: string): string {
+  const n = Array.isArray(asked) ? asked.length : 0;
+  const missing = n - found.length;
+  return [
+    found.length ? `${verb}: ${found.map((t) => `"${t.title}"`).join(", ")}.` : `Nothing ${verb.toLowerCase()} — no task matched those ids.`,
+    missing > 0 ? ` ${missing} id${missing === 1 ? "" : "s"} did not match anything; say so rather than claiming it was done.` : "",
+  ].join("");
+}
+
+async function closeTasks(input: any): Promise<ToolResult> {
+  const found = await targets(input.ids);
+  if (found.length) {
+    await db
+      .update(tasks)
+      .set({
+        status: "done",
+        completedAt: new Date(),
+        lastTouchedAt: new Date(),
+        ...(input.note ? { notes: input.note } : {}),
+      })
+      .where(inArray(tasks.id, found.map((t) => t.id)));
+  }
+  refreshWork();
+  return { text: report(found, input.ids, "Closed") };
+}
+
+async function rescheduleTasks(input: any): Promise<ToolResult> {
+  const found = await targets(input.ids);
+  const dueDate = input.dueDate
+    ? new Date(`${input.dueDate}T09:00:00`)
+    : input.dueInDays != null
+      ? addDays(new Date(), input.dueInDays)
+      : null;
+
+  if (!dueDate) return { text: "No new date given, so nothing moved. Say when it should be due." };
+
+  if (found.length) {
+    await db
+      .update(tasks)
+      .set({ dueDate, lastTouchedAt: new Date() })
+      .where(inArray(tasks.id, found.map((t) => t.id)));
+  }
+  refreshWork();
+  return { text: `${report(found, input.ids, "Moved")} New due date ${iso(dueDate)}.` };
+}
+
+async function dropTasks(input: any): Promise<ToolResult> {
+  const found = await targets(input.ids);
+  if (found.length) {
+    await db
+      .update(tasks)
+      .set({
+        status: "dropped",
+        completedAt: new Date(),
+        lastTouchedAt: new Date(),
+        ...(input.reason ? { notes: input.reason } : {}),
+      })
+      .where(inArray(tasks.id, found.map((t) => t.id)));
+  }
+  refreshWork();
+  return { text: report(found, input.ids, "Dropped") };
+}
+
+/**
+ * Drafts an assignment and leaves it waiting. Nothing runs until they approve
+ * it — briefing the team costs real money and speaks for them, so it is not
+ * something the brain should set going on its own.
+ */
+async function proposeTeamBrief(input: any): Promise<ToolResult> {
+  const client = await resolveClient(input.client);
+  let projectId: string | null = null;
+  if (input.project) projectId = (await resolveProject(input.project))?.id ?? null;
+
+  const chosen: string[] = Array.isArray(input.agents) && input.agents.length ? input.agents : ["strategy"];
+
+  const result = await createAssignment({
+    title: input.title,
+    brief: input.brief,
+    clientId: client?.id ?? null,
+    projectId,
+    agentKeys: chosen as AgentKey[],
+    status: "proposed",
+  });
+
+  if (!result.ok) return { text: `Could not draft that: ${result.error}` };
+
+  refresh("/team");
+  return {
+    text: `Drafted "${input.title}" for ${chosen.join(", ")} and put it in front of them to approve. Nothing has started yet. Tell them what you proposed and that it is waiting on their go-ahead.`,
+    data: { assignmentId: result.id, kind: "proposal" },
   };
 }
 

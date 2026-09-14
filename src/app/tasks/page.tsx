@@ -7,6 +7,7 @@ import { AlarmClock, CalendarCheck, CalendarClock, Inbox, PauseCircle, Sparkles 
 import { Card, Empty, PageHeader, toneStyle, Zone } from "@/components/ui";
 import { TaskList, type TaskRowData } from "@/components/tasks";
 import { QuickAdd, QuickAddHint } from "@/components/quick-add";
+import { Triage } from "@/components/triage";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,32 @@ export default async function TasksPage({
     db.select({ id: clients.id, name: clients.name, color: clients.color }).from(clients).where(eq(clients.status, "active")),
     db.select({ id: projects.id, name: projects.name }).from(projects).where(eq(projects.status, "active")),
   ]);
+
+  // Triage is its own view: the overdue pile, three answers, nothing else.
+  if (view === "triage") {
+    const overdue = rows
+      .filter((r) => r.task.status !== "done" && r.task.status !== "dropped" && r.task.dueDate && r.task.dueDate < startOfDay(now))
+      .map((r) => ({
+        id: r.task.id,
+        title: r.task.title,
+        clientName: r.clientName,
+        clientColor: r.clientColor,
+        projectName: r.projectName,
+        daysOverdue: Math.max(1, Math.round((startOfDay(now).getTime() - r.task.dueDate!.getTime()) / 86400000)),
+        fromBrain: r.task.source === "claude",
+      }));
+
+    return (
+      <>
+        <PageHeader
+          title="Clear the decks"
+          subtitle="Did it, later, or not doing. Anything you move is not a failure — it is just an honest date."
+          actions={<Link href="/tasks" className="btn btn-sm">Back to tasks</Link>}
+        />
+        <Triage items={overdue} />
+      </>
+    );
+  }
 
   const grouped = new Map<string, TaskRowData[]>();
   for (const row of rows) {

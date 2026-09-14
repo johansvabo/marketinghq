@@ -153,7 +153,17 @@ function computedHeadline(p: DayPicture): string {
   if (p.events.length === 0) parts.push("No meetings today — this is the day to move the work that needs a run at it.");
   else parts.push(`${p.events.length} meeting${p.events.length === 1 ? "" : "s"} taking ${hours}h, leaving roughly ${Math.max(0, 8 - Math.round(p.stats.meetingMinutes / 60))}h of working time.`);
 
-  if (p.overdue.length > 0) parts.push(`${p.overdue.length} task${p.overdue.length === 1 ? " is" : "s are"} already overdue — clear or kill them before adding anything new.`);
+  /*
+   * Not a telling-off. A long overdue list is usually optimistic dates rather
+   * than abandoned work, and being scolded by your own tools on opening them
+   * is the fastest way to stop opening them.
+   */
+  if (p.overdue.length > 0)
+    parts.push(
+      p.overdue.length >= 8
+        ? `${p.overdue.length} tasks are past their date — worth five minutes clearing the decks before anything new.`
+        : `${p.overdue.length} task${p.overdue.length === 1 ? " is" : "s are"} past ${p.overdue.length === 1 ? "its" : "their"} date.`,
+    );
   else if (p.dueToday.length > 0) parts.push(`${p.dueToday.length} due today.`);
 
   const urgentReport = p.reportsSoon[0];

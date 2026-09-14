@@ -7,6 +7,8 @@ import { isConfigured } from "@/lib/env";
 import { iso, relativeDay } from "@/lib/dates";
 import { Card, Chip, ClientDot, Empty, PageHeader } from "@/components/ui";
 import { BrainChat } from "@/components/brain-chat";
+import { ProposedBriefs } from "@/components/proposed-briefs";
+import { pendingProposals } from "@/lib/ai/assignments";
 import { InsightRow } from "@/components/insight-row";
 
 export const dynamic = "force-dynamic";
@@ -28,13 +30,14 @@ export default async function BrainPage({
 
   if (tab === "library") return <Library params={params} />;
 
-  const [threads, history, clientRows, projectRows, threadRows] = await Promise.all([
+  const [threads, history, clientRows, projectRows, proposals, threadRows] = await Promise.all([
     db.select().from(chatThreads).orderBy(desc(chatThreads.updatedAt)).limit(12),
     params.thread
       ? db.select().from(chatMessages).where(eq(chatMessages.threadId, params.thread)).orderBy(chatMessages.createdAt)
       : Promise.resolve([]),
     db.select({ id: clients.id, name: clients.name }).from(clients).where(eq(clients.status, "active")).orderBy(clients.name),
     db.select({ id: projects.id, name: projects.name, clientId: projects.clientId }).from(projects).orderBy(projects.name),
+    pendingProposals(),
     params.thread
       ? db.select().from(chatThreads).where(eq(chatThreads.id, params.thread)).limit(1)
       : Promise.resolve([]),
@@ -48,7 +51,9 @@ export default async function BrainPage({
       <PageHeader title="Brain" subtitle="Sees every client at once. Ask across all of them, or hand it notes to file." actions={<Tabs tab={tab} />} />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_230px]">
-        <BrainChat
+        <div>
+          <ProposedBriefs proposals={proposals} />
+          <BrainChat
           key={params.thread ?? "new"}
           initial={history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))}
           threadId={params.thread}
@@ -58,7 +63,8 @@ export default async function BrainPage({
           about={{ clients: clientRows, projects: projectRows }}
           clientId={history.length > 0 ? (threadRow?.clientId ?? null) : null}
           projectId={history.length > 0 ? (threadRow?.projectId ?? null) : null}
-        />
+          />
+        </div>
 
         <aside className="hidden flex-col gap-2 lg:flex">
           <div className="flex items-center justify-between">
