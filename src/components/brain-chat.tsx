@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUp, Loader2, Sparkles, Square } from "lucide-react";
+import { ArrowUp, Loader2, Paperclip, Sparkles, Square, X } from "lucide-react";
 import { Markdown } from "./markdown";
 import { SaveAnswer, type SaveTarget } from "./save-answer";
 import { setThreadContext } from "@/server/actions";
+import { uploadFiles } from "@/lib/documents/upload-client";
+import { UPLOAD_ACCEPT } from "@/lib/documents/limits";
 
 type ChatMessage = { role: "user" | "assistant"; content: string; tools?: string[] };
 
@@ -37,6 +39,7 @@ export function BrainChat({
   assignmentId,
   compact = false,
   about,
+  uploads,
 }: {
   initial: ChatMessage[];
   threadId?: string;
@@ -57,12 +60,18 @@ export function BrainChat({
   compact?: boolean;
   /** Lets the conversation be filed under a client, so it can be found again. */
   about?: { clients: { id: string; name: string }[]; projects: { id: string; name: string; clientId: string | null }[] };
+  /** Lets files be dropped straight into the conversation. */
+  uploads?: { storageOn: boolean; canDirect: boolean; access: "public" | "private" };
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>(initial);
   const [input, setInput] = useState("");
   const [threadId, setThreadId] = useState(initialThreadId);
   const threadRef = useRef(initialThreadId);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [attached, setAttached] = useState<{ id: string; title: string; hasText: boolean }[]>([]);
   const [aboutClient, setAboutClient] = useState(clientId ?? "");
   const [aboutProject, setAboutProject] = useState(projectId ?? "");
   const [busy, setBusy] = useState(false);
@@ -76,12 +85,49 @@ export function BrainChat({
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, activeTool]);
 
+  /**
+   * A file dropped here is uploaded straight away and left unfiled — safe, and
+   * readable — then handed to the brain to put away. Uploading first means a
+   * big PDF is never held hostage by a question about where it belongs.
+   */
+  async function take(files: FileList | File[]) {
+    const list = Array.from(files);
+    if (!uploads || list.length === 0 || busy) return;
+
+    setError(null);
+    setUploading(list.length === 1 ? list[0].name : `${list.length} files`);
+    try {
+      const result = await uploadFiles(list, {
+        storageOn: uploads.storageOn,
+        canDirect: uploads.canDirect,
+        access: uploads.access,
+        onProgress: (p) => setUploading(`${p.name} (${p.index}/${p.total})`),
+      });
+      setAttached((prev) => [...prev, ...result.created.map((c) => ({ id: c.id, title: c.title, hasText: c.hasText }))]);
+      if (result.failed.length > 0) {
+        setError(result.failed.map((f) => `${f.name} ${f.reason}`).join(" "));
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The upload failed.");
+    } finally {
+      setUploading(null);
+    }
+  }
+
   async function send(text: string) {
-    if (!text.trim() || busy) return;
+    // Dropping a file and saying nothing is a complete instruction in itself:
+    // here, deal with this. Only a genuinely empty send is refused.
+    if (busy) return;
+    if (!text.trim()) {
+      if (attached.length === 0) return;
+      text = attached.length === 1 ? "Here's a file." : `Here are ${attached.length} files.`;
+    }
 
     setError(null);
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: text }, { role: "assistant", content: "", tools: [] }]);
+    const sending = attached;
+    setAttached([]);
     setBusy(true);
 
     const controller = new AbortController();
@@ -98,6 +144,7 @@ export function BrainChat({
           assignmentId,
           clientId: aboutClient || clientId || null,
           projectId: aboutProject || projectId || null,
+          documentIds: sending.map((a) => a.id),
         }),
         signal: controller.signal,
       });
@@ -186,7 +233,28 @@ export function BrainChat({
   }
 
   return (
-    <div className={compact ? "flex max-h-[70vh] min-h-[240px] flex-col" : "flex h-[calc(100dvh-190px)] flex-col md:h-[calc(100dvh-150px)]"}>
+    <div
+      className={`relative ${compact ? "flex max-h-[70vh] min-h-[240px] flex-col" : "flex h-[calc(100dvh-190px)] flex-col md:h-[calc(100dvh-150px)]"}`}
+      onDragOver={uploads ? (e) => { e.preventDefault(); setDragging(true); } : undefined}
+      onDragLeave={uploads ? (e) => { if (e.currentTarget === e.target) setDragging(false); } : undefined}
+      onDrop={
+        uploads
+          ? (e) => {
+              e.preventDefault();
+              setDragging(false);
+              void take(e.dataTransfer.files);
+            }
+          : undefined
+      }
+    >
+      {dragging && (
+        <div
+          className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[14px] border-2 border-dashed"
+          style={{ borderColor: "var(--color-brand)", background: "color-mix(in oklch, var(--color-brand) 10%, var(--canvas))" }}
+        >
+          <span className="text-[13px] font-medium">Drop it here — I&rsquo;ll read it and file it</span>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-5 px-4 text-center">
@@ -261,6 +329,31 @@ export function BrainChat({
           </div>
         )}
       </div>
+
+      {(attached.length > 0 || uploading) && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {attached.map((a) => (
+            <span key={a.id} className="chip inline-flex items-center gap-1.5">
+              <Paperclip size={11} />
+              {a.title}
+              {!a.hasText && <span className="text-[10px] text-muted">no text</span>}
+              <button
+                onClick={() => setAttached((prev) => prev.filter((x) => x.id !== a.id))}
+                aria-label={`Remove ${a.title}`}
+                className="opacity-60 hover:opacity-100"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+          {uploading && (
+            <span className="inline-flex items-center gap-1.5 text-[11.5px] text-muted">
+              <Loader2 size={12} className="animate-spin" />
+              {uploading}
+            </span>
+          )}
+        </div>
+      )}
 
       {about && (
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
@@ -350,12 +443,42 @@ export function BrainChat({
           placeholder={placeholder ?? "Ask anything, or tell it something worth remembering…"}
           className="max-h-[180px] flex-1 resize-none bg-transparent px-2 py-2 text-[14px] leading-relaxed outline-none placeholder:text-[var(--ink-muted)]"
         />
+        {uploads && (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              accept={UPLOAD_ACCEPT}
+              className="sr-only"
+              onChange={(e) => {
+                if (e.target.files) void take(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={!aiReady || busy || uploading !== null}
+              className="btn btn-ghost btn-sm h-9 w-9 !p-0"
+              aria-label="Attach a file"
+              title="Attach a file — or just drop it anywhere here"
+            >
+              <Paperclip size={15} />
+            </button>
+          </>
+        )}
         {busy ? (
           <button type="button" onClick={() => abortRef.current?.abort()} className="btn btn-sm" title="Stop">
             <Square size={13} fill="currentColor" />
           </button>
         ) : (
-          <button type="submit" disabled={!input.trim() || !aiReady} className="btn btn-primary btn-sm h-9 w-9 !p-0" aria-label="Send">
+          <button
+            type="submit"
+            disabled={(!input.trim() && attached.length === 0) || !aiReady}
+            className="btn btn-primary btn-sm h-9 w-9 !p-0"
+            aria-label="Send"
+          >
             <ArrowUp size={16} strokeWidth={2.5} />
           </button>
         )}

@@ -5,7 +5,7 @@
  */
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db";
-import { assignments, clients, contributions, tasks } from "../src/lib/db/schema";
+import { assignments, clients, contributions, documents, tasks } from "../src/lib/db/schema";
 import { runBrainTool } from "../src/lib/ai/tools";
 import { processAssignment, pendingProposals } from "../src/lib/ai/assignments";
 
@@ -15,7 +15,7 @@ const check = (name: string, ok: boolean, detail = "") => {
   ok ? pass++ : fail++;
 };
 
-await db.delete(tasks); await db.delete(assignments); await db.delete(clients);
+await db.delete(documents); await db.delete(tasks); await db.delete(assignments); await db.delete(clients);
 const [c] = await db.insert(clients).values({ name: "Nattugla", slug: `n-${Date.now()}`, status: "active" }).returning();
 
 const made = await db.insert(tasks).values([
@@ -77,6 +77,35 @@ check("...and nothing was marked as started", stillPending.length === 0, `${stil
 const shown = await pendingProposals();
 check("it is offered for approval", shown.length === 1 && shown[0].title === "Lanseringsstrategi");
 
+// Filing a dropped file
+const [unfiled] = await db.insert(documents).values({
+  title: "Dokument (3).pdf", body: "Merkevareplattform for Nattugla. Tone: varm, tydelig.", kind: "note", source: "upload",
+}).returning();
+
+const read = await runBrainTool("read_document", { id: unfiled.id });
+check("read_document returns the text", read.text.includes("Merkevareplattform for Nattugla"));
+check("...and says it is not filed yet", /not filed under any client/i.test(read.text), read.text.slice(0, 120));
+
+const filed = await runBrainTool("file_document", {
+  id: unfiled.id, client: "Nattugla", kind: "brand", title: "Merkevareplattform",
+});
+const [after] = await db.select().from(documents).where(eq(documents.id, unfiled.id));
+check("file_document attaches it to the client", after.clientId === c.id);
+check("...sets the kind", after.kind === "brand", after.kind);
+check("...and replaces a useless filename", after.title === "Merkevareplattform", after.title);
+check("...and reports where it went", /Nattugla/.test(filed.text), filed.text);
+
+// A client that does not exist must not be guessed at.
+const [stray] = await db.insert(documents).values({ title: "Notat", body: "x", kind: "note", source: "upload" }).returning();
+const bad = await runBrainTool("file_document", { id: stray.id, client: "Firma som ikke finnes" });
+const [strayAfter] = await db.select().from(documents).where(eq(documents.id, stray.id));
+check("an unknown client is refused, not approximated", strayAfter.clientId === null, String(strayAfter.clientId));
+check("...and the brain is told to ask instead", /do not file it somewhere close enough/i.test(bad.text), bad.text);
+
+const missing = await runBrainTool("file_document", { id: "no-such-doc", client: "Nattugla" });
+check("a missing document is reported", /No document with that id/.test(missing.text));
+
+await db.delete(documents);
 await db.delete(assignments); await db.delete(tasks); await db.delete(clients);
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1,7 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chatMessages, chatThreads } from "@/lib/db/schema";
+import { chatMessages, chatThreads, documents } from "@/lib/db/schema";
 import { isSignedIn } from "@/lib/auth";
 import { runBrain } from "@/lib/ai/brain";
 import { getAgent } from "@/lib/ai/agents";
@@ -19,7 +19,7 @@ export const maxDuration = 250;
 export async function POST(request: Request) {
   if (!(await isSignedIn())) return new Response("Unauthorized", { status: 401 });
 
-  const { threadId, message, context, agentKey, clientId, projectId, assignmentId } = (await request.json()) as {
+  const { threadId, message, context, agentKey, clientId, projectId, assignmentId, documentIds } = (await request.json()) as {
     threadId?: string;
     message: string;
     context?: string;
@@ -27,6 +27,8 @@ export async function POST(request: Request) {
     clientId?: string | null;
     projectId?: string | null;
     assignmentId?: string | null;
+    /** Files dropped into the conversation, already uploaded and unfiled. */
+    documentIds?: string[];
   };
 
   if (!message?.trim()) return new Response("Empty message", { status: 400 });
@@ -61,6 +63,38 @@ export async function POST(request: Request) {
     content: row.content,
   }));
 
+  /*
+   * A file dropped into the chat arrives unfiled. Describe what came in — with
+   * enough of the text to recognise it — so the brain can put it away, or ask
+   * where it goes, without a round trip just to find out what it is.
+   */
+  let attachmentNote: string | undefined;
+  if (documentIds?.length) {
+    const rows = await db.select().from(documents).where(inArray(documents.id, documentIds));
+    if (rows.length) {
+      attachmentNote = [
+        `They have just uploaded ${rows.length === 1 ? "a file" : `${rows.length} files`} into this conversation. ${
+          rows.length === 1 ? "It is" : "They are"
+        } saved but not filed under any client yet.`,
+        ``,
+        ...rows.map((d) =>
+          [
+            `### ${d.title}`,
+            `id: ${d.id}`,
+            d.fileName ? `file: ${d.fileName}` : "",
+            d.extractionNote ? `note: ${d.extractionNote}` : "",
+            ``,
+            d.body ? d.body.slice(0, 4000) + (d.body.length > 4000 ? "\n\n…(truncated — read_document for the rest)" : "") : "(no readable text could be extracted)",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        ),
+        ``,
+        `File each one with file_document. If what they wrote makes the destination clear, just do it and say where it went. If it does not, ask — one short question.`,
+      ].join("\n");
+    }
+  }
+
   const encoder = new TextEncoder();
   const threadIdForClient = thread.id;
 
@@ -86,6 +120,8 @@ export async function POST(request: Request) {
           // The thread's own links decide the context; anything the page adds
           // is appended rather than trusted in its place.
           systemExtra: [await threadContext(thread), context].filter(Boolean).join("\n\n") || undefined,
+          // Specific to this message, so it must not sit inside the cached prefix.
+          turnExtra: attachmentNote,
           agent: getAgent(agentKey ?? thread.agentKey),
           onEvent: (event) => {
             if (event.type === "text") {

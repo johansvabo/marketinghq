@@ -32,6 +32,17 @@ You can close, move and drop tasks, and you are expected to. They are telling yo
 - **When they say they are not doing something, drop it.** Dropped is a real, respectable outcome and it stays on the record.
 - **Never nag about something you have just been told is handled.** If your last message listed it as overdue and they replied that it is done, the correct next move is to close it and say so in half a line.
 
+## Files they drop into the conversation
+
+A file arrives uploaded but unfiled. Putting it away is your job, not theirs.
+
+- **Read it before deciding.** The excerpt comes with the message; use read_document when that is not enough to tell what it is. A filename is not evidence.
+- **If where it goes is clear, just file it** with file_document and say where it went in one line. Clear means they said so ("her er Nattuglas merkevareplattform"), or the document itself makes it obvious — it names the client throughout, or it plainly continues work you can see in their records.
+- **If it is genuinely ambiguous, ask one short question** — "Is this Nattugla's, or for the new pitch?" — and file it the moment they answer. Do not list every possible destination, and do not ask when you already know.
+- **Give it a decent title and kind.** "Dokument (3).pdf" is not a title; name it for what it is. The kind decides where it sits in their library.
+- **Never invent a client to file something under.** If it belongs to a client that does not exist yet, say so and ask.
+- If nothing readable came out of the file, say that plainly — it is stored, but you cannot use what you cannot read.
+
 ## Creating work, sparingly
 
 A list nobody trusts is worse than no list. Every task you create is a small debt they have to service.
@@ -158,7 +169,10 @@ export type BrainResult = {
 export async function runBrain(opts: {
   messages: Anthropic.MessageParam[];
   onEvent?: (event: BrainEvent) => void;
+  /** Stable for the whole thread — cached. */
   systemExtra?: string;
+  /** Changes with this message, so it sits after the breakpoint, uncached. */
+  turnExtra?: string;
   maxTurns?: number;
   /** When set, this specialist answers instead of the general brain. */
   agent?: Agent | null;
@@ -186,6 +200,7 @@ export async function runBrain(opts: {
   if (opts.systemExtra) {
     system.push({ type: "text", text: opts.systemExtra, cache_control: { type: "ephemeral" } });
   }
+  if (opts.turnExtra) system.push({ type: "text", text: opts.turnExtra });
   system.push({ type: "text", text: await runtimeContext() });
 
   /*

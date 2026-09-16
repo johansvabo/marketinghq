@@ -4,20 +4,8 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileUp, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
-import { upload } from "@vercel/blob/client";
-import {
-  formatBytes,
-  MAX_DIRECT_POST_BYTES,
-  MAX_UPLOAD_BYTES,
-  MULTIPART_THRESHOLD_BYTES,
-  UPLOAD_ACCEPT,
-} from "@/lib/documents/limits";
-
-type Result = {
-  created: { title: string; hasText: boolean; stored: boolean }[];
-  failed: { name: string; reason: string }[];
-  storageConfigured: boolean;
-};
+import { formatBytes, MAX_DIRECT_POST_BYTES, MAX_UPLOAD_BYTES, UPLOAD_ACCEPT } from "@/lib/documents/limits";
+import { uploadFiles, type UploadResult } from "@/lib/documents/upload-client";
 
 /**
  * Drag a file anywhere on the drop zone, or click to pick. Multiple at once is
@@ -43,96 +31,9 @@ export function DocumentUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
+  const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ name: string; index: number; total: number } | null>(null);
-
-  /**
-   * With blob storage on, each file goes straight from the browser to storage,
-   * so the serverless request-body cap never applies and large files work. The
-   * server then reads it back to pull the text out.
-   *
-   * Without it, files travel through the server and are limited to what the
-   * platform will carry.
-   */
-  async function sendDirect(list: File[]): Promise<Result> {
-    const created: Result["created"] = [];
-    const failed: Result["failed"] = [];
-
-    for (const [index, file] of list.entries()) {
-      setProgress({ name: file.name, index: index + 1, total: list.length });
-      try {
-        if (file.size > MAX_UPLOAD_BYTES) {
-          throw new Error(`is ${formatBytes(file.size)}, over the ${formatBytes(MAX_UPLOAD_BYTES)} limit.`);
-        }
-
-        const blob = await upload(file.name, file, {
-          access,
-          handleUploadUrl: "/api/documents/blob-token",
-          multipart: file.size > MULTIPART_THRESHOLD_BYTES,
-          contentType: file.type || undefined,
-        });
-
-        const response = await fetch("/api/documents/from-blob", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            url: blob.url,
-            pathname: blob.pathname,
-            fileName: file.name,
-            fileType: file.type,
-            fileSize: file.size,
-            clientId,
-            projectId,
-          }),
-        });
-
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error ?? "could not be recorded.");
-        created.push(payload);
-      } catch (caught) {
-        const raw = caught instanceof Error ? caught.message : "could not be uploaded.";
-
-        /*
-         * If the store will not issue an upload token, the direct path is
-         * unavailable however healthy storage looks. Anything small enough can
-         * still go through the server, so fall back rather than failing — a
-         * misconfiguration should cost the size limit, not the feature.
-         */
-        if (/client token/i.test(raw) && file.size <= MAX_DIRECT_POST_BYTES) {
-          try {
-            const viaServer = await sendThroughServer([file]);
-            created.push(...viaServer.created);
-            failed.push(...viaServer.failed);
-            continue;
-          } catch {
-            /* fall through to reporting the original failure */
-          }
-        }
-
-        failed.push({
-          name: file.name,
-          reason: /client token/i.test(raw)
-            ? `is ${formatBytes(file.size)} and the store would not issue an upload token, so it cannot be sent directly. Files up to ${formatBytes(MAX_DIRECT_POST_BYTES)} still work. Settings explains how to lift this.`
-            : raw,
-        });
-      }
-    }
-
-    return { created, failed, storageConfigured: true };
-  }
-
-  async function sendThroughServer(list: File[]): Promise<Result> {
-    const body = new FormData();
-    body.set("clientId", clientId);
-    if (projectId) body.set("projectId", projectId);
-    for (const file of list) body.append("files", file);
-
-    const response = await fetch("/api/documents/upload", { method: "POST", body });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error ?? "The upload failed.");
-    return payload;
-  }
 
   async function handleFiles(files: FileList | File[]) {
     const list = Array.from(files);
@@ -144,7 +45,7 @@ export function DocumentUpload({
     setProgress(null);
 
     try {
-      setResult(storageOn && canDirect ? await sendDirect(list) : await sendThroughServer(list));
+      setResult(await uploadFiles(list, { clientId, projectId, storageOn, canDirect, access, onProgress: setProgress }));
       router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The upload failed — check your connection and try again.");

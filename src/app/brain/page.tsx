@@ -4,6 +4,7 @@ import { Plus, Upload } from "lucide-react";
 import { db } from "@/lib/db";
 import { chatMessages, chatThreads, clients, insights, projects } from "@/lib/db/schema";
 import { isConfigured } from "@/lib/env";
+import { blobAccess, canDirectUpload, storageAvailable } from "@/lib/storage";
 import { iso, relativeDay } from "@/lib/dates";
 import { Card, Chip, ClientDot, Empty, PageHeader } from "@/components/ui";
 import { BrainChat } from "@/components/brain-chat";
@@ -30,7 +31,7 @@ export default async function BrainPage({
 
   if (tab === "library") return <Library params={params} />;
 
-  const [threads, history, clientRows, projectRows, proposals, threadRows] = await Promise.all([
+  const [threads, history, clientRows, projectRows, proposals, storage, threadRows] = await Promise.all([
     db.select().from(chatThreads).orderBy(desc(chatThreads.updatedAt)).limit(12),
     params.thread
       ? db.select().from(chatMessages).where(eq(chatMessages.threadId, params.thread)).orderBy(chatMessages.createdAt)
@@ -38,6 +39,7 @@ export default async function BrainPage({
     db.select({ id: clients.id, name: clients.name }).from(clients).where(eq(clients.status, "active")).orderBy(clients.name),
     db.select({ id: projects.id, name: projects.name, clientId: projects.clientId }).from(projects).orderBy(projects.name),
     pendingProposals(),
+    storageAvailable(),
     params.thread
       ? db.select().from(chatThreads).where(eq(chatThreads.id, params.thread)).limit(1)
       : Promise.resolve([]),
@@ -61,6 +63,7 @@ export default async function BrainPage({
           aiReady={isConfigured.anthropic()}
           saveTargets={{ clients: clientRows, projects: projectRows }}
           about={{ clients: clientRows, projects: projectRows }}
+          uploads={{ storageOn: storage.ok, canDirect: canDirectUpload(), access: blobAccess() }}
           clientId={history.length > 0 ? (threadRow?.clientId ?? null) : null}
           projectId={history.length > 0 ? (threadRow?.projectId ?? null) : null}
           />

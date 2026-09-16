@@ -250,6 +250,37 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "read_document",
+    description:
+      "Read a document in full. Use it when an excerpt is not enough to tell what something is or where it belongs — reading before filing beats guessing from a filename.",
+    input_schema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Document id." } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "file_document",
+    description:
+      "Put an uploaded document where it belongs: set its client, project, kind and a better title. Use it on anything they have just dropped into the conversation. If it is obvious from what they said or from the document itself, file it and say where it went. If it genuinely is not, ask them — one short question, not a list.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Document id." },
+        client: { type: "string", description: "Client name or id." },
+        project: { type: "string", description: "Project name or id, when it belongs to one." },
+        kind: {
+          type: "string",
+          enum: ["brief", "strategy", "brand", "process", "research", "reference", "note"],
+        },
+        title: { type: "string", description: "A better title than the filename, when the filename is poor." },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "create_project",
     description:
       "Create a project — a body of work with an end state, like a campaign, an audit, a launch, or a workstream agreed in a meeting. Use this when several tasks belong together under one outcome. Do not create a project for a single task.",
@@ -392,6 +423,10 @@ export async function runBrainTool(
       return saveDraft(input, context);
     case "create_task":
       return createTaskTool(input);
+    case "read_document":
+      return readDocument(input);
+    case "file_document":
+      return fileDocument(input);
     case "close_tasks":
       return closeTasks(input);
     case "reschedule_tasks":
@@ -911,6 +946,45 @@ async function proposeTeamBrief(input: any): Promise<ToolResult> {
   return {
     text: `Drafted "${input.title}" for ${chosen.join(", ")} and put it in front of them to approve. Nothing has started yet. Tell them what you proposed and that it is waiting on their go-ahead.`,
     data: { assignmentId: result.id, kind: "proposal" },
+  };
+}
+
+async function readDocument(input: any): Promise<ToolResult> {
+  const [doc] = await db.select().from(documents).where(eq(documents.id, String(input.id))).limit(1);
+  if (!doc) return { text: "No document with that id." };
+  return {
+    text: `# ${doc.title}\n\nKind: ${doc.kind}. ${doc.clientId ? "Filed under a client." : "Not filed under any client yet."}\n\n${doc.body || "(no readable text was extracted from this file)"}`,
+  };
+}
+
+/** Where an uploaded file ends up. Unfiled documents are the ones worth moving. */
+async function fileDocument(input: any): Promise<ToolResult> {
+  const [doc] = await db.select().from(documents).where(eq(documents.id, String(input.id))).limit(1);
+  if (!doc) return { text: "No document with that id." };
+
+  const client = input.client ? await resolveClient(input.client) : null;
+  if (input.client && !client) {
+    return { text: `No client called "${input.client}". Ask them which one, or create it first — do not file it somewhere close enough.` };
+  }
+
+  const project = input.project ? await resolveProject(input.project) : null;
+
+  await db
+    .update(documents)
+    .set({
+      ...(client ? { clientId: client.id } : {}),
+      ...(project ? { projectId: project.id } : {}),
+      ...(input.kind ? { kind: input.kind } : {}),
+      ...(input.title ? { title: String(input.title).trim() } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(documents.id, doc.id));
+
+  refresh("/clients", `/clients/${client?.id ?? doc.clientId ?? ""}`, `/projects/${project?.id ?? ""}`);
+
+  const where = client ? client.name : "no client";
+  return {
+    text: `Filed "${input.title ?? doc.title}" under ${where}${project ? ` › ${project.name}` : ""}${input.kind ? ` as ${input.kind}` : ""}. Tell them where it went in one line.`,
   };
 }
 
