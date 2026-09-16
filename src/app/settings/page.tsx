@@ -10,6 +10,8 @@ import { relativeDay } from "@/lib/dates";
 import { Card, CardTitle, Chip, ClientDot, Empty, PageHeader } from "@/components/ui";
 import { ConnectionRow } from "@/components/connection-row";
 import { ClientManager } from "@/components/client-manager";
+import { SpendPanel } from "@/components/spend-panel";
+import { spendSummary, type SpendSummary } from "@/lib/ai/spend";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,7 @@ type SettingsData = {
   clientRows: (typeof clients.$inferSelect)[];
   stakeholderRows: (typeof stakeholders.$inferSelect)[];
   recentSyncs: (typeof syncRuns.$inferSelect)[];
+  spend: SpendSummary | null;
   failed: boolean;
 };
 
@@ -32,18 +35,20 @@ const EMPTY: SettingsData = {
   clientRows: [],
   stakeholderRows: [],
   recentSyncs: [],
+  spend: null,
   failed: true,
 };
 
 async function loadSettingsData(): Promise<SettingsData> {
   try {
-    const [connectionRows, clientRows, stakeholderRows, recentSyncs] = await Promise.all([
+    const [connectionRows, clientRows, stakeholderRows, recentSyncs, spend] = await Promise.all([
       db.select().from(connections),
       db.select().from(clients).orderBy(clients.name),
       db.select().from(stakeholders),
       db.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(12),
+      spendSummary(30),
     ]);
-    return { connectionRows, clientRows, stakeholderRows, recentSyncs, failed: false };
+    return { connectionRows, clientRows, stakeholderRows, recentSyncs, spend, failed: false };
   } catch {
     // The health panel above already says why, in terms you can act on.
     return EMPTY;
@@ -59,7 +64,7 @@ export default async function SettingsPage() {
   const model = isConfigured.anthropic() ? await modelStatus() : null;
 
   const data = await loadSettingsData();
-  const { connectionRows, clientRows, stakeholderRows, recentSyncs } = data;
+  const { connectionRows, clientRows, stakeholderRows, recentSyncs, spend } = data;
 
   const byProvider = new Map(connectionRows.map((c) => [c.provider, c]));
 
@@ -76,6 +81,13 @@ export default async function SettingsPage() {
             what to fix. Nothing has been lost — this is a connection problem, not a data one.
           </p>
         </Card>
+      )}
+
+      {spend && (
+        <section className="mb-5">
+          <h2 className="section-title mb-2">Spend</h2>
+          <SpendPanel summary={spend} />
+        </section>
       )}
 
       <div className="mb-5 grid gap-3 md:grid-cols-2">

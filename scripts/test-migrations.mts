@@ -91,6 +91,33 @@ check(
 const t = await db.execute("select name from sqlite_master where type = 'table' and name = 'time_entries'");
 check("time_entries is created", t.rows.length === 1);
 
+// The spend ledger. Hand-written, so worth confirming it actually applies —
+// and that cost is a real, not an integer, or every sub-cent call rounds to
+// zero and the ledger quietly reports that the app is free to run.
+const spend = await db.execute("select name from sqlite_master where type = 'table' and name = 'ai_usage'");
+check("ai_usage is created", spend.rows.length === 1);
+const spendCols = await db.execute("PRAGMA table_info(ai_usage)");
+const spendNames = spendCols.rows.map((r) => String((r as Record<string, unknown>).name));
+check(
+  "it records every billed quantity separately",
+  ["input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "web_searches", "cost_usd"].every((c) =>
+    spendNames.includes(c),
+  ),
+  spendNames.join(","),
+);
+const costType = String(
+  (spendCols.rows.find((r) => String((r as Record<string, unknown>).name) === "cost_usd") as Record<string, unknown>)?.type ?? "",
+);
+check("cost is stored as a real, not rounded to whole dollars", costType.toUpperCase() === "REAL", costType);
+await db.execute(
+  "insert into ai_usage (id, surface, model, output_tokens, cost_usd) values ('t1', 'chat', 'claude-opus-5', 120, 0.003)",
+);
+const back = await db.execute("select cost_usd from ai_usage where id = 't1'");
+check(
+  "a third of a cent survives the round trip",
+  Math.abs(Number((back.rows[0] as Record<string, unknown>).cost_usd) - 0.003) < 1e-9,
+);
+
 db.close();
 rmSync(file, { force: true });
 console.log(`\n${pass} passed, ${fail} failed`);

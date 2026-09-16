@@ -123,6 +123,7 @@ export async function POST(request: Request) {
           // Specific to this message, so it must not sit inside the cached prefix.
           turnExtra: attachmentNote,
           agent: getAgent(agentKey ?? thread.agentKey),
+          surface: "chat",
           onEvent: (event) => {
             if (event.type === "text") {
               streamed += event.text;

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { clients, projects } from "@/lib/db/schema";
 import { format } from "@/lib/dates";
 import { anthropic, currentModel, isTransient } from "./client";
+import { recordUsage, usageFrom, type Surface } from "./spend";
 import { BRAIN_TOOLS, runBrainTool } from "./tools";
 import { AGENTS, agentSystemPrompt, type Agent } from "./agents";
 
@@ -176,6 +177,8 @@ export async function runBrain(opts: {
   maxTurns?: number;
   /** When set, this specialist answers instead of the general brain. */
   agent?: Agent | null;
+  /** Which part of the app is asking, for the spend ledger. */
+  surface?: Surface;
 }): Promise<BrainResult> {
   const client = anthropic();
   const model = await currentModel();
@@ -286,6 +289,15 @@ export async function runBrain(opts: {
     console.log(
       `[claude] turn=${turn} model=${model} in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`,
     );
+    // Per turn, not per run: a ten-turn briefing and a one-turn question are
+    // the same shape in the ledger, and the difference between them is the
+    // whole point of keeping it.
+    await recordUsage({
+      surface: opts.surface ?? "other",
+      model,
+      agentKey: opts.agent?.key,
+      usage: usageFrom(u),
+    });
 
     const text = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
@@ -354,6 +366,8 @@ export async function generate(opts: {
   prompt: string;
   maxTokens?: number;
   effort?: "low" | "medium" | "high";
+  /** Which part of the app is asking, for the spend ledger. */
+  surface?: Surface;
 }): Promise<string> {
   const client = anthropic();
   const model = await currentModel();
@@ -378,6 +392,8 @@ export async function generate(opts: {
       await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
     }
   }
+
+  await recordUsage({ surface: opts.surface ?? "other", model, usage: usageFrom(response.usage) });
 
   return response.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")

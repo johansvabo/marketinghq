@@ -136,6 +136,7 @@ export async function getOrCreateBrief(now = new Date()): Promise<{ headline: st
       prompt: describeDay(picture, now),
       effort: "low",
       maxTokens: 1_000,
+      surface: "brief",
     });
     await db.insert(briefs).values({ date, headline, body: "ai", stats: picture.stats }).onConflictDoNothing();
     return { headline, source: "ai" };

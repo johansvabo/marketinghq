@@ -150,5 +150,5 @@ export async function draftReport(runId: string): Promise<string> {
     .filter((s) => s !== "")
     .join("\n");
 
-  return generate({ system: REPORT_SYSTEM, prompt, effort: "high", maxTokens: 16_000 });
+  return generate({ system: REPORT_SYSTEM, prompt, effort: "high", maxTokens: 16_000, surface: "report" });
 }

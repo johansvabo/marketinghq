@@ -61,6 +61,31 @@ export async function setModelOverride(modelId: string | null): Promise<void> {
     .onConflictDoUpdate({ target: settings.key, set: { value: { model: modelId } } });
 }
 
+/** What Anthropic says when the account has run out of prepaid credit. */
+export const CREDIT_EXHAUSTED =
+  "Your Anthropic account is out of credit, so the Brain and the team are paused until it is topped up. " +
+  "Add credit under Plans & Billing at console.anthropic.com. Everything else in Marketing HQ keeps working, " +
+  "and Settings → Spend shows where the last of it went.";
+
+/**
+ * A credit-balance failure, wherever it turns up in the error body. It has no
+ * dedicated status or error type — the only reliable marker is the sentence
+ * itself, which can sit at any of three depths depending on whether it came
+ * back as an HTTP body or as an SSE error frame mid-stream.
+ */
+export function isCreditExhausted(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const err = error as {
+    message?: string;
+    error?: { message?: string; error?: { message?: string } };
+  };
+  const haystack = [err.message, err.error?.message, err.error?.error?.message]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes("credit balance is too low");
+}
+
 /**
  * Anthropic overload/5xx/rate-limit/connection errors — worth a short
  * automatic retry rather than surfacing to the user immediately.
@@ -73,6 +98,9 @@ export async function setModelOverride(modelId: string | null): Promise<void> {
  */
 export function isTransient(error: unknown): boolean {
   if (!(error instanceof Error) || !("status" in error)) return false;
+  // Out of credit looks transient from the outside — no status, arrives
+  // mid-stream — but no amount of retrying will find more money.
+  if (isCreditExhausted(error)) return false;
   const err = error as { status?: number; error?: { type?: string; error?: { type?: string } } };
 
   if (typeof err.status === "number") return err.status === 429 || err.status >= 500;
@@ -89,9 +117,11 @@ export function isTransient(error: unknown): boolean {
   return kind === "overloaded_error" || kind === "api_error" || kind === "rate_limit_error";
 }
 
+
 /** Turns SDK errors into something worth showing a human. */
 export function describeAiError(error: unknown): string {
   if (error instanceof AiNotConfiguredError) return error.message;
+  if (isCreditExhausted(error)) return CREDIT_EXHAUSTED;
   if (isTransient(error)) {
     return "Claude is at capacity right now — this usually clears in under a minute. Try again, or switch models under Settings → Claude if it keeps happening.";
   }

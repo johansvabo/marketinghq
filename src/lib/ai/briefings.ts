@@ -166,6 +166,7 @@ export async function processPending(
         agent,
         messages: [{ role: "user", content: prompt }],
         maxTurns: 10,
+        surface: "briefing",
       });
 
       const text = result.text.trim();

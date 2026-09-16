@@ -650,6 +650,37 @@ export const contributions = sqliteTable(
   ],
 );
 
+/* ------------------------------------------------------------------- spend */
+
+/**
+ * One row per model request, so "am I spending a lot?" has an answer.
+ *
+ * Written best-effort after the call has already succeeded — a failure to
+ * record what something cost must never fail the thing the user asked for.
+ */
+export const aiUsage = sqliteTable(
+  "ai_usage",
+  {
+    id: id(),
+    /** Which part of the app made the call: chat, briefing, assignment, ... */
+    surface: text("surface").notNull(),
+    /** The specialist, when one was answering. Null for the Brain itself. */
+    agentKey: text("agent_key"),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    webSearches: integer("web_searches").notNull().default(0),
+    /** Priced at the time of the call, so a later price change cannot rewrite history. */
+    costUsd: real("cost_usd").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("ai_usage_created").on(t.createdAt), index("ai_usage_surface").on(t.surface)],
+);
+
+export type AiUsage = typeof aiUsage.$inferSelect;
+
 export type Assignment = typeof assignments.$inferSelect;
 export type Contribution = typeof contributions.$inferSelect;
 

@@ -253,6 +253,7 @@ export async function processAssignment(
           agent,
           messages: [{ role: "user", content: await buildPrompt(assignment, agent.key) }],
           maxTurns: 10,
+          surface: "assignment",
         });
 
         const text = result.text.trim();

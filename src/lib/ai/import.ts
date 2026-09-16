@@ -6,6 +6,7 @@ import { clients } from "@/lib/db/schema";
 import type { SourceDocument } from "@/lib/import/files";
 import { chunkText } from "@/lib/import/files";
 import { anthropic, currentModel, isTransient } from "./client";
+import { recordUsage, usageFrom } from "./spend";
 
 export const INSIGHT_KINDS = [
   "insight",
@@ -111,6 +112,8 @@ async function extractOne(content: Anthropic.ContentBlockParam[], names: string[
       await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
     }
   }
+
+  await recordUsage({ surface: "import", model, usage: usageFrom(response.usage) });
 
   return (response.parsed_output?.entries ?? []).map(normalize);
 }
