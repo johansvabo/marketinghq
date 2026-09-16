@@ -72,6 +72,14 @@ export async function POST(request: Request) {
 
       send("thread", { threadId: threadIdForClient });
 
+      /*
+       * What actually reached the screen. If the run dies partway — Claude at
+       * capacity, a dropped connection — the answer the user has already read
+       * must still be there when they come back, so it is kept as it streams
+       * rather than only being written once the whole run succeeds.
+       */
+      let streamed = "";
+
       try {
         const result = await runBrain({
           messages,
@@ -80,7 +88,13 @@ export async function POST(request: Request) {
           systemExtra: [await threadContext(thread), context].filter(Boolean).join("\n\n") || undefined,
           agent: getAgent(agentKey ?? thread.agentKey),
           onEvent: (event) => {
-            if (event.type === "text") send("text", { text: event.text });
+            if (event.type === "text") {
+              streamed += event.text;
+              send("text", { text: event.text });
+            } else if (event.type === "retry") {
+              streamed = streamed.slice(0, Math.max(0, streamed.length - event.drop));
+              send("retry", { drop: event.drop });
+            }
             else if (event.type === "tool_start") send("tool", { name: event.name, state: "start" });
             else send("tool", { name: event.name, state: "end", summary: event.summary });
           },
@@ -95,7 +109,19 @@ export async function POST(request: Request) {
 
         send("done", { ok: true });
       } catch (error) {
-        send("error", { message: describeAiError(error) });
+        const message = describeAiError(error);
+
+        // Keep the half-answer rather than losing it. Marked, so it is clear
+        // on re-reading that it stopped rather than ended.
+        if (streamed.trim()) {
+          await db.insert(chatMessages).values({
+            threadId: threadIdForClient,
+            role: "assistant",
+            content: `${streamed.trimEnd()}\n\n---\n\n_This answer stopped early: ${message}_`,
+          });
+        }
+
+        send("error", { message });
       } finally {
         controller.close();
       }

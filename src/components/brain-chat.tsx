@@ -62,6 +62,7 @@ export function BrainChat({
   const [messages, setMessages] = useState<ChatMessage[]>(initial);
   const [input, setInput] = useState("");
   const [threadId, setThreadId] = useState(initialThreadId);
+  const threadRef = useRef(initialThreadId);
   const [aboutClient, setAboutClient] = useState(clientId ?? "");
   const [aboutProject, setAboutProject] = useState(projectId ?? "");
   const [busy, setBusy] = useState(false);
@@ -122,7 +123,10 @@ export function BrainChat({
 
           const payload = JSON.parse(dataMatch[1]);
 
-          if (eventMatch[1] === "thread") setThreadId(payload.threadId);
+          if (eventMatch[1] === "thread") {
+            setThreadId(payload.threadId);
+            threadRef.current = payload.threadId;
+          }
           else if (eventMatch[1] === "text") {
             setActiveTool(null);
             setMessages((prev) => {
@@ -142,6 +146,14 @@ export function BrainChat({
             } else {
               setActiveTool(null);
             }
+          } else if (eventMatch[1] === "retry") {
+            // The attempt that produced this text failed; unsay it.
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              next[next.length - 1] = { ...last, content: last.content.slice(0, Math.max(0, last.content.length - payload.drop)) };
+              return next;
+            });
           } else if (eventMatch[1] === "error") {
             setError(payload.message);
           }
@@ -149,6 +161,19 @@ export function BrainChat({
       }
       // Tasks and insights the brain created should show up everywhere else too.
       router.refresh();
+
+      /*
+       * Put the new conversation in the address bar, once it is finished and
+       * saved. Without this a fresh chat lives only in this component's state:
+       * reload the page — or come back to the installed app — and the whole
+       * exchange looked lost, even though it was in the database the whole
+       * time. Deliberately after the run, not when the thread id first
+       * arrives, since changing the URL remounts this component and would cut
+       * off an answer still streaming.
+       */
+      if (!initialThreadId && threadRef.current && !assignmentId) {
+        router.replace(`${agentKey ? `/team/${agentKey}` : "/brain"}?thread=${threadRef.current}`, { scroll: false });
+      }
     } catch (caught) {
       if ((caught as Error).name !== "AbortError") {
         setError(caught instanceof Error ? caught.message : "Something went wrong.");

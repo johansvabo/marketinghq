@@ -109,6 +109,13 @@ export const brainSystemPrompt = () => IDENTITY.replace("TEAM_ROSTER", teamRoste
  * (agent.web); the brain itself — no agent passed — gets it unconditionally,
  * since it has no discipline of its own to stay inside.
  */
+/** Joins what successive turns said into the one answer the user actually read. */
+export function joinTurns(soFar: string, next: string): string {
+  const addition = next.trim();
+  if (!addition) return soFar;
+  return soFar ? `${soFar.trimEnd()}\n\n${addition}` : addition;
+}
+
 export const wantsWeb = (agent: Agent | null | undefined): boolean => (agent ? agent.web : true);
 
 /** Facts about the current state of the world, refreshed on every request. */
@@ -133,6 +140,8 @@ async function runtimeContext(): Promise<string> {
 
 export type BrainEvent =
   | { type: "text"; text: string }
+  /** A failed attempt is being retried: drop this many characters already shown. */
+  | { type: "retry"; drop: number }
   | { type: "tool_start"; name: string; input: unknown }
   | { type: "tool_end"; name: string; summary: string };
 
@@ -211,6 +220,9 @@ export async function runBrain(opts: {
      */
     let response: Anthropic.Message | undefined;
     for (let attempt = 0; ; attempt++) {
+      // What this attempt put on screen, so a retry can take it back rather
+      // than streaming the same answer a second and third time.
+      let shown = 0;
       const stream = client.messages.stream({
         model,
         max_tokens: 32_000,
@@ -230,7 +242,10 @@ export async function runBrain(opts: {
       });
 
       if (opts.onEvent) {
-        stream.on("text", (delta) => opts.onEvent!({ type: "text", text: delta }));
+        stream.on("text", (delta) => {
+          shown += delta.length;
+          opts.onEvent!({ type: "text", text: delta });
+        });
       }
 
       try {
@@ -238,6 +253,9 @@ export async function runBrain(opts: {
         break;
       } catch (error) {
         if (!isTransient(error) || attempt >= 2) throw error;
+        // Take back the half-answer before re-sending, or the same paragraph
+        // arrives two and three times over.
+        if (shown > 0) opts.onEvent?.({ type: "retry", drop: shown });
         await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
       }
     }
@@ -258,7 +276,11 @@ export async function runBrain(opts: {
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("");
-    if (text) finalText = text;
+    // Every turn's text was already streamed to the screen, so every turn's
+    // text belongs in what gets stored. Assigning here instead of appending
+    // meant a run that said something, used a tool, then said more was saved
+    // with only the last part — the earlier half vanished on the next reload.
+    finalText = joinTurns(finalText, text);
 
     /*
      * A server-side tool (web search) can pause a long turn rather than finish
