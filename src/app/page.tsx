@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { CalendarClock, ExternalLink } from "lucide-react";
 import { db } from "@/lib/db";
-import { clients, projects } from "@/lib/db/schema";
+import { briefings, clients, projects } from "@/lib/db/schema";
 import { getDayPicture, getOrCreateBrief } from "@/lib/brief";
 import { format, relativeDay, timeRange } from "@/lib/dates";
-import { AlertTriangle, CalendarDays, ListTodo, Sparkles } from "lucide-react";
+import { AlertTriangle, CalendarDays, ListTodo, Sparkles, Users } from "lucide-react";
 import { Card, CardTitle, Chip, ClientBadge, ClientDot, Empty, StatStrip, toneStyle, Zone } from "@/components/ui";
 import { SignalCard } from "@/components/signals";
 import { TaskList } from "@/components/tasks";
@@ -17,12 +17,22 @@ import { onboardingSteps } from "@/lib/onboarding";
 export const dynamic = "force-dynamic";
 
 export default async function TodayPage() {
-  const [picture, brief, onboarding, clientOptions, projectOptions] = await Promise.all([
+  const [picture, brief, onboarding, clientOptions, projectOptions, unreadBriefings] = await Promise.all([
     getDayPicture(),
     getOrCreateBrief(),
     onboardingSteps(),
     db.select({ id: clients.id, name: clients.name, color: clients.color }).from(clients).where(eq(clients.status, "active")),
     db.select({ id: projects.id, name: projects.name }).from(projects).where(eq(projects.status, "active")),
+    // Work the team has already done and been paid for, that nobody has
+    // looked at. It lived only on /team, which meant it was invisible unless
+    // you went looking — so the schedule ran up a bill against no reader.
+    db
+      .select({ briefing: briefings, clientName: clients.name })
+      .from(briefings)
+      .leftJoin(clients, eq(briefings.clientId, clients.id))
+      .where(and(eq(briefings.status, "ready"), isNull(briefings.readAt)))
+      .orderBy(desc(briefings.completedAt))
+      .limit(12),
   ]);
 
   const clientNames = new Map(clientOptions.map((c) => [c.id, c.name]));
@@ -257,6 +267,38 @@ export default async function TodayPage() {
               </ul>
             )}
           </Card>
+
+          {unreadBriefings.length > 0 && (
+            <Card tone="brand">
+              <CardTitle
+                action={
+                  <Link href="/team" className="btn btn-ghost btn-sm">
+                    Read
+                  </Link>
+                }
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Users size={12} />
+                  The team has been working
+                </span>
+              </CardTitle>
+              <p className="mb-2 text-[12.5px] leading-relaxed text-soft">
+                {unreadBriefings.length} unread {unreadBriefings.length === 1 ? "briefing" : "briefings"}. These are
+                produced on a schedule and cost money to make, so they are worth either reading or switching off in
+                Settings.
+              </p>
+              <ul className="flex flex-col gap-1.5">
+                {unreadBriefings.slice(0, 4).map((row) => (
+                  <li key={row.briefing.id} className="text-[12.5px] leading-snug">
+                    <Link href="/team" className="underline-offset-2 hover:underline">
+                      {row.briefing.title ?? "Untitled"}
+                    </Link>
+                    {row.clientName && <span className="ml-1.5 text-[11.5px] text-muted">{row.clientName}</span>}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
           <Card>
             <CardTitle>Ask the brain</CardTitle>

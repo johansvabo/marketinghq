@@ -148,7 +148,7 @@ const overdueTasks: Rule = {
         entityId: task.id,
         actions: [
           { kind: "complete_task", label: "Mark done", payload: { taskId: task.id } },
-          { kind: "open", label: "Open task", payload: { href: `/tasks?focus=${task.id}` } },
+          { kind: "open", label: "Open task", payload: { href: `/tasks/${task.id}` } },
         ],
         score: score(severity, Math.min(25, late * 3) + (5 - task.priority) * 2),
       };
@@ -193,7 +193,7 @@ const stalledTasks: Rule = {
           waiting
             ? { kind: "create_task", label: "Chase it", payload: { title: `Follow up: ${task.title}`, clientId: task.clientId, projectId: task.projectId, priority: 2 } }
             : { kind: "complete_task", label: "Mark done", payload: { taskId: task.id } },
-          { kind: "open", label: "Open task", payload: { href: `/tasks?focus=${task.id}` } },
+          { kind: "open", label: "Open task", payload: { href: `/tasks/${task.id}` } },
         ],
         score: score(idle >= 14 ? "important" : "fyi", Math.min(20, idle)),
       };

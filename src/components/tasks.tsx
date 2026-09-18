@@ -80,7 +80,18 @@ export function TaskRow({
       </button>
 
       <div className="min-w-0 flex-1">
-        <p className={clsx("text-[13.5px] leading-snug", done && "line-through opacity-50")}>{task.title}</p>
+        {/* The title is the way in. Everything about a task that is not a
+            checkbox — notes, hours, why it exists — lives on its own page,
+            and there was no link to it from anywhere. */}
+        <Link
+          href={`/tasks/${task.id}`}
+          className={clsx(
+            "block text-[13.5px] leading-snug underline-offset-2 hover:underline",
+            done && "line-through opacity-50",
+          )}
+        >
+          {task.title}
+        </Link>
 
         {showMeta && (clientName || projectName || dueLabel || task.waitingOn) && (
           <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-muted">

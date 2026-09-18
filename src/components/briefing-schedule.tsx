@@ -26,6 +26,13 @@ export function BriefingSchedule({ config, clientCount }: { config: BriefingConf
   }
 
   const runsPerCycle = state.agents.length * clientCount;
+  /*
+   * A briefing is a ten-turn agent run with web search, and its cost is
+   * dominated by output tokens — roughly $1.25 on Opus at high effort. This
+   * line used to say "a few cents", which was wrong by two orders of
+   * magnitude and made the schedule look free to leave switched on.
+   */
+  const monthlyUsd = runsPerCycle * state.slots.length * 4.3 * 1.25;
 
   return (
     <Card>
@@ -157,7 +164,7 @@ export function BriefingSchedule({ config, clientCount }: { config: BriefingConf
       <p className="mt-4 border-t pt-3 text-[11.5px] leading-relaxed text-muted">
         {runsPerCycle === 0 || clientCount === 0
           ? "Nothing will run — pick at least one specialist, and have at least one active client."
-          : `Each run is about ${runsPerCycle} pieces of work (${state.agents.length} specialist${state.agents.length === 1 ? "" : "s"} × ${clientCount} active client${clientCount === 1 ? "" : "s"}), and there are ${state.slots.length} a week. Each one costs a few cents of Claude usage, more when they search the web.`}
+          : `Each run is about ${runsPerCycle} pieces of work (${state.agents.length} specialist${state.agents.length === 1 ? "" : "s"} × ${clientCount} active client${clientCount === 1 ? "" : "s"}), and there are ${state.slots.length} a week — roughly $${monthlyUsd.toFixed(0)} a month in Claude usage. Settings → Spend shows what they actually cost once a few have run.`}
       </p>
 
       {note && <p className="mt-2 text-[12px]" style={{ color: "var(--color-good)" }}>{note}</p>}

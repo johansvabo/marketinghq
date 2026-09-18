@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -36,9 +37,15 @@ const BUCKETS = [
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string; view?: string }>;
+  searchParams: Promise<{ client?: string; view?: string; focus?: string }>;
 }) {
   const params = await searchParams;
+
+  // Signals created before task pages existed stored ?focus=<id> here, and it
+  // did nothing — the button said "Open task" and dropped you on the full
+  // list. Those rows are still in the database, so honour the old shape.
+  if (params.focus) redirect(`/tasks/${params.focus}`);
+
   const view = params.view ?? "open";
   const now = new Date();
 
