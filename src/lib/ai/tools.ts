@@ -252,7 +252,7 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
   {
     name: "read_document",
     description:
-      "Read a document in full. Use it when an excerpt is not enough to tell what something is or where it belongs — reading before filing beats guessing from a filename.",
+      "Read a document in full, by id. Everywhere else shows you an excerpt — the first page or two of something that may run to forty. Call this whenever the answer depends on what a document actually says: a named chapter or section, a list, a set of numbers, anyone's exact wording. An excerpt that stops mid-way is not the document, and answering from it produces work that is confidently about the wrong thing.",
     input_schema: {
       type: "object",
       properties: { id: { type: "string", description: "Document id." } },
@@ -499,7 +499,7 @@ async function searchBrain(input: any): Promise<ToolResult> {
   const docText = docRows
     .map(
       ({ doc, clientName }) =>
-        `[document · ${doc.kind}] ${doc.title}\n  ${clientName ? `client: ${clientName} · ` : ""}updated ${iso(doc.updatedAt)}\n  ${doc.body.replace(/\s+/g, " ").slice(0, 2000)}`,
+        `[document · ${doc.kind}] ${doc.title}\n  id: ${doc.id}${clientName ? ` · client: ${clientName}` : ""} · updated ${iso(doc.updatedAt)}\n  ${excerptOf(doc.body, 2000, doc.id)}`,
     )
     .join("\n\n");
 
@@ -700,7 +700,7 @@ async function getClientBrief(input: any): Promise<ToolResult> {
     ``,
     `## Documents (${docRows.length})`,
     docRows.length
-      ? docRows.map((d) => `- [${d.kind}] ${d.title}${d.pinned ? " (pinned)" : ""}\n    ${d.body.replace(/\s+/g, " ").slice(0, 700)}`).join("\n")
+      ? docRows.map((d) => `- [${d.kind}] ${d.title}${d.pinned ? " (pinned)" : ""} — id: ${d.id}\n    ${excerptOf(d.body, 700, d.id)}`).join("\n")
       : "None yet.",
     ``,
     `## Recent captures`,
@@ -947,6 +947,22 @@ async function proposeTeamBrief(input: any): Promise<ToolResult> {
     text: `Drafted "${input.title}" for ${chosen.join(", ")} and put it in front of them to approve. Nothing has started yet. Tell them what you proposed and that it is waiting on their go-ahead.`,
     data: { assignmentId: result.id, kind: "proposal" },
   };
+}
+
+/**
+ * An excerpt that can be turned back into the whole thing.
+ *
+ * A document shown as 2,000 characters of a forty-page strategy, with no id
+ * and no sign that anything was cut, is worse than not showing it: the model
+ * reads what it was given, believes that is the document, and answers from a
+ * fragment. A specialist once said outright that the chapter he needed "is
+ * not available to me" — and he was right, there was no handle to ask with.
+ */
+function excerptOf(body: string, limit: number, id: string): string {
+  const flat = body.replace(/\s+/g, " ").trim();
+  if (flat.length <= limit) return flat;
+  const missing = flat.length - limit;
+  return `${flat.slice(0, limit)}\n\n  … ${missing.toLocaleString("en")} more characters. This is an excerpt, not the document — call read_document with id ${id} to read all of it.`;
 }
 
 async function readDocument(input: any): Promise<ToolResult> {

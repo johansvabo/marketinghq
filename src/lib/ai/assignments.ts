@@ -153,6 +153,10 @@ async function buildPrompt(assignment: Assignment, agentKey: AgentKey): Promise<
     `---`,
     ``,
     `Start by reading what the system already holds that bears on this${client ? ` — ${client.name}'s standing context, documents, captured insights, open work and numbers` : ""}.`,
+    ``,
+    `**When the brief points at a document, read that document before you write anything.** Searching returns an excerpt — the first page or two of something that may run much longer — and an excerpt that stops before the part you were sent to find is not the document. Every excerpt carries an id; \`read_document\` with that id gives you the whole thing. Answering a brief from a fragment of the source it named produces work that is confident, well written and about the wrong thing, and nobody downstream can tell.`,
+    ``,
+    `If you genuinely cannot get at something the brief depends on, say so at the top of your answer, name what is missing, and answer the rest. Do not quietly work around the gap.`,
   ].join("\n");
 
   if (agent.runsLast) {
