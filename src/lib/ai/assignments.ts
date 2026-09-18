@@ -107,7 +107,7 @@ export async function nextPending(assignmentId: string) {
     .filter((r) => agentRank(r.agentKey) < 2 || specialistsDone)
     .sort((a, b) => agentRank(a.agentKey) - agentRank(b.agentKey));
 
-  return { next: available[0], outstanding: outstanding.length, rows };
+  return { next: available[0], available, outstanding: outstanding.length, rows };
 }
 
 function contextLine(client: { name: string } | null, project: { name: string } | null): string {
@@ -230,29 +230,51 @@ export async function processAssignment(
   let produced = 0;
   let failed = 0;
 
-  const { next } = await nextPending(assignmentId);
+  /*
+   * Every specialist that can go, goes now — together.
+   *
+   * They were run strictly one per request, which made a three-specialist
+   * brief take three round trips of several minutes each even though nothing
+   * in it was sequential. Only the reviewer genuinely depends on the others,
+   * and nextPending already holds her back until they are settled. So the
+   * specialists overlap and the wall clock becomes the slowest of them
+   * rather than the sum.
+   */
+  const { available } = await nextPending(assignmentId);
+  const batch = available.filter((r) => agentRank(r.agentKey) < 2);
+  const toRun = batch.length > 0 ? batch : available.slice(0, 1);
 
-  if (next) {
-    const agent = getAgent(next.agentKey);
-    if (!agent) {
-      await db
-        .update(contributions)
-        .set({ status: "error", error: "That specialist no longer exists.", completedAt: new Date() })
-        .where(eq(contributions.id, next.id));
-      failed++;
-    } else {
+  const outcomes = await Promise.all(
+    toRun.map(async (row): Promise<"produced" | "failed"> => {
+      const agent = getAgent(row.agentKey);
+      if (!agent) {
+        await db
+          .update(contributions)
+          .set({ status: "error", error: "That specialist no longer exists.", completedAt: new Date() })
+          .where(eq(contributions.id, row.id));
+        return "failed";
+      }
+
       // Recorded before the risky call, so a request killed mid-answer still
       // leaves evidence that this one was tried.
       await db
         .update(contributions)
-        .set({ status: "running", startedAt: new Date(), attempts: next.attempts + 1 })
-        .where(eq(contributions.id, next.id));
+        .set({ status: "running", startedAt: new Date(), attempts: row.attempts + 1 })
+        .where(eq(contributions.id, row.id));
 
       try {
         const result = await runBrain({
           agent,
           messages: [{ role: "user", content: await buildPrompt(assignment, agent.key) }],
-          maxTurns: 10,
+          /*
+           * Six turns and medium effort for a specialist, the full depth for
+           * the reviewer who actually writes the deliverable. Ten turns at
+           * high effort was the main reason a brief took longer than asking
+           * Claude directly, and the extra turns were mostly re-reading
+           * material the specialist had already read.
+           */
+          maxTurns: agent.runsLast ? 10 : 6,
+          effort: agent.runsLast ? "high" : "medium",
           surface: "assignment",
         });
 
@@ -267,7 +289,7 @@ export async function processAssignment(
             sources: result.toolCalls.map((c) => c.name),
             completedAt: new Date(),
           })
-          .where(eq(contributions.id, next.id));
+          .where(eq(contributions.id, row.id));
 
         // The reviewer's piece is the assignment's answer, not just another part.
         if (agent.runsLast && !empty) {
@@ -277,7 +299,7 @@ export async function processAssignment(
             .where(eq(assignments.id, assignmentId));
         }
 
-        produced++;
+        return "produced";
       } catch (error) {
         await db
           .update(contributions)
@@ -287,11 +309,14 @@ export async function processAssignment(
             error: describeAiError(error).slice(0, 300),
             completedAt: new Date(),
           })
-          .where(eq(contributions.id, next.id));
-        failed++;
+          .where(eq(contributions.id, row.id));
+        return "failed";
       }
-    }
-  }
+    }),
+  );
+
+  produced = outcomes.filter((o) => o === "produced").length;
+  failed = outcomes.filter((o) => o === "failed").length;
 
   const { outstanding, rows, next: stillAvailable } = await nextPending(assignmentId);
   const done = outstanding === 0;
@@ -325,6 +350,118 @@ export async function processAssignment(
   }
 
   return { produced, failed, remaining: outstanding, done, retryAfterMs };
+}
+
+/**
+ * Drives every assignment that still has work outstanding.
+ *
+ * Until this existed, an assignment only moved while its page was open in a
+ * browser: the run route was called by a component, and nothing else ever
+ * called it. Close the laptop halfway through and the brief sat at
+ * "0 of 3 reported" indefinitely — which is exactly what it looked like from
+ * the outside, work quietly going nowhere.
+ *
+ * Runs newest first, since a brief you just handed over is the one you are
+ * waiting on, and stops when the budget is spent rather than when the work
+ * is done — whatever is left is picked up by the next pass.
+ */
+export async function processAssignments(
+  budgetMs = 120_000,
+  now = new Date(),
+): Promise<{ advanced: number; produced: number; failed: number; stillOutstanding: number }> {
+  const deadline = Date.now() + budgetMs;
+  let advanced = 0;
+  let produced = 0;
+  let failed = 0;
+
+  const active = await db
+    .select({ id: assignments.id })
+    .from(assignments)
+    .where(eq(assignments.status, "running"))
+    .orderBy(desc(assignments.createdAt))
+    .limit(20);
+
+  for (const { id } of active) {
+    if (Date.now() >= deadline) break;
+    const progress = await processAssignment(id, undefined, now);
+    if (progress.produced > 0 || progress.failed > 0) advanced++;
+    produced += progress.produced;
+    failed += progress.failed;
+  }
+
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(assignments)
+    .where(eq(assignments.status, "running"));
+
+  return { advanced, produced, failed, stillOutstanding: Number(n) };
+}
+
+/**
+ * Puts failed work back in the queue.
+ *
+ * A contribution that errored was terminal: nextPending only ever looks at
+ * "pending", so a specialist who hit a rate limit or ran out of credit stayed
+ * failed for good and there was no way to ask again. The attempt counter is
+ * reset too — the previous attempts were spent on a problem that has since
+ * been fixed, and carrying them over would strand it again immediately.
+ */
+export async function retryAssignment(
+  assignmentId: string,
+  opts: { all?: boolean } = {},
+): Promise<{ ok: true; requeued: number } | { ok: false; error: string }> {
+  const [assignment] = await db.select().from(assignments).where(eq(assignments.id, assignmentId)).limit(1);
+  if (!assignment) return { ok: false, error: "That assignment no longer exists." };
+
+  const target = opts.all
+    ? ne(contributions.status, "pending")
+    : inArray(contributions.status, ["error", "empty"]);
+
+  const requeued = await db
+    .update(contributions)
+    .set({ status: "pending", attempts: 0, startedAt: null, completedAt: null, error: null, ...(opts.all ? { body: null } : {}) })
+    .where(and(eq(contributions.assignmentId, assignmentId), target))
+    .returning();
+
+  if (requeued.length === 0) return { ok: false, error: "Nothing to retry — every specialist has already answered." };
+
+  await db
+    .update(assignments)
+    .set({ status: "running", error: null, completedAt: null, updatedAt: new Date(), ...(opts.all ? { synthesis: null } : {}) })
+    .where(eq(assignments.id, assignmentId));
+
+  return { ok: true, requeued: requeued.length };
+}
+
+/**
+ * Rewrites the brief and starts everyone again.
+ *
+ * A brief that came back wrong could not be corrected — the only way to
+ * change a word was to delete it and re-type the whole thing, losing the
+ * thread of what had been asked and why.
+ */
+export async function reviseAssignment(
+  assignmentId: string,
+  brief: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const text = brief.trim();
+  if (!text) return { ok: false, error: "The brief cannot be empty." };
+
+  const [assignment] = await db.select().from(assignments).where(eq(assignments.id, assignmentId)).limit(1);
+  if (!assignment) return { ok: false, error: "That assignment no longer exists." };
+  if (text === assignment.brief) return { ok: false, error: "The brief has not changed." };
+
+  await db
+    .update(assignments)
+    .set({ brief: text, synthesis: null, error: null, status: "running", completedAt: null, updatedAt: new Date() })
+    .where(eq(assignments.id, assignmentId));
+
+  await db
+    .update(contributions)
+    .set({ status: "pending", attempts: 0, startedAt: null, completedAt: null, error: null, body: null })
+    .where(eq(contributions.assignmentId, assignmentId));
+
+  return { ok: true };
 }
 
 /** Briefs the brain has drafted and left waiting for a yes. */

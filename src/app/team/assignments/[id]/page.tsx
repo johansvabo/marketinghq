@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { assignmentDiscussions, assignmentWithWork } from "@/lib/ai/assignments";
 import { Discuss } from "@/components/discuss";
+import { AssignmentBrief } from "@/components/assignment-brief";
 import { AGENTS, type AgentKey } from "@/lib/ai/agents";
 import { Card, CardTitle, Chip, Empty, PageHeader } from "@/components/ui";
 import { Markdown } from "@/components/markdown";
@@ -71,10 +72,12 @@ export default async function AssignmentPage({ params }: { params: Promise<{ id:
       <div className="mb-4 flex flex-col gap-3">
         <AssignmentRunner assignmentId={assignment.id} outstanding={outstanding} nextUp={nextUp} />
 
-        <Card tone="info">
-          <CardTitle>The brief</CardTitle>
-          <p className="whitespace-pre-wrap text-[13px] leading-relaxed">{assignment.brief}</p>
-        </Card>
+        <AssignmentBrief
+          assignmentId={assignment.id}
+          brief={assignment.brief}
+          failedCount={work.filter((w) => w.status === "error" || w.status === "empty").length}
+          outstanding={outstanding}
+        />
       </div>
 
       {/* The gathered answer is the point of the exercise, so it comes first. */}

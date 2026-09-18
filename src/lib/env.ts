@@ -32,6 +32,10 @@ export const env = {
   ownerEmail: opt("OWNER_EMAIL"),
   cronSecret: opt("CRON_SECRET"),
 
+  /** Transactional email, for the weekly digest of what the team produced. */
+  resendKey: opt("RESEND_API_KEY"),
+  emailFrom: opt("EMAIL_FROM"),
+
   anthropicKey: opt("ANTHROPIC_API_KEY"),
   anthropicModel: opt("ANTHROPIC_MODEL") ?? "claude-opus-5",
 
@@ -59,6 +63,7 @@ export const env = {
 
 export const isConfigured = {
   anthropic: () => Boolean(env.anthropicKey),
+  email: () => Boolean(env.resendKey && env.ownerEmail),
   google: () => Boolean(env.google.clientId && env.google.clientSecret),
   googleAds: () => Boolean(env.google.clientId && env.google.adsDeveloperToken),
   microsoft: () => Boolean(env.microsoft.clientId && env.microsoft.clientSecret),

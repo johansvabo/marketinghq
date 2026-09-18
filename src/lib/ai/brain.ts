@@ -179,6 +179,13 @@ export async function runBrain(opts: {
   agent?: Agent | null;
   /** Which part of the app is asking, for the spend ledger. */
   surface?: Surface;
+  /**
+   * How hard to think. Defaults to Anthropic's own default. Lowering it is
+   * the first cost and latency lever that does not change the model — it
+   * shortens reasoning and consolidates tool calls, which is the difference
+   * between a specialist answering in two minutes and in eight.
+   */
+  effort?: "low" | "medium" | "high";
 }): Promise<BrainResult> {
   const client = anthropic();
   const model = await currentModel();
@@ -256,7 +263,7 @@ export async function runBrain(opts: {
         cache_control: { type: "ephemeral" },
         ...(containerId ? { container: containerId } : {}),
         thinking: { type: "adaptive" },
-        output_config: { effort: "high" },
+        output_config: { effort: opts.effort ?? "high" },
       });
 
       if (opts.onEvent) {

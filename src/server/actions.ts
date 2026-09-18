@@ -31,7 +31,8 @@ import { syncAll } from "@/lib/integrations/sync";
 import { removeFile } from "@/lib/storage";
 import { AGENTS, type AgentKey } from "@/lib/ai/agents";
 import { planCycle as planCycleNow, processPending, saveBriefingConfig } from "@/lib/ai/briefings";
-import { createAssignment } from "@/lib/ai/assignments";
+import { createAssignment, retryAssignment, reviseAssignment } from "@/lib/ai/assignments";
+import { sendWeeklyDigest } from "@/lib/ai/digest";
 
 function refresh(...paths: string[]) {
   // Callers interpolate ids that may be null, which leaves a bare "/projects/".
@@ -121,6 +122,36 @@ export async function fileAssignment(assignmentId: string) {
 
   refresh("/clients", `/clients/${row.clientId ?? ""}`, `/projects/${row.projectId ?? ""}`, `/team/assignments/${assignmentId}`);
   return { ok: true as const, id: doc.id, clientId: row.clientId };
+}
+
+/**
+ * Puts failed specialists back in the queue. `all` starts everyone over,
+ * for when the answers came back technically fine but beside the point.
+ */
+export async function retryTeam(assignmentId: string, all = false) {
+  const result = await retryAssignment(assignmentId, { all });
+  refresh("/team", `/team/assignments/${assignmentId}`);
+  return result;
+}
+
+/** Rewrites the brief and sends everyone back out on the new one. */
+export async function reviseTeamBrief(assignmentId: string, brief: string) {
+  const result = await reviseAssignment(assignmentId, brief);
+  refresh("/team", `/team/assignments/${assignmentId}`);
+  return result;
+}
+
+/**
+ * Sends this week's digest now, whether or not one has gone out already.
+ * The point is being able to see what lands in the inbox without waiting
+ * until Sunday to find out the sender address was wrong.
+ */
+export async function sendDigestNow() {
+  const outcome = await sendWeeklyDigest(new Date(), { force: true });
+  refresh("/settings");
+  if (!outcome.sent) return { ok: false as const, error: outcome.reason };
+  if (!outcome.result.ok) return { ok: false as const, error: outcome.result.error };
+  return { ok: true as const, pieces: outcome.pieces };
 }
 
 /* -------------------------------------------------------------------- model */

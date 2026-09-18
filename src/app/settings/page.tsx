@@ -11,6 +11,8 @@ import { Card, CardTitle, Chip, ClientDot, Empty, PageHeader } from "@/component
 import { ConnectionRow } from "@/components/connection-row";
 import { ClientManager } from "@/components/client-manager";
 import { SpendPanel } from "@/components/spend-panel";
+import { DigestSettings } from "@/components/digest-settings";
+import { emailBlocker } from "@/lib/email";
 import { spendSummary, type SpendSummary } from "@/lib/ai/spend";
 
 export const dynamic = "force-dynamic";
@@ -89,6 +91,10 @@ export default async function SettingsPage() {
           <SpendPanel summary={spend} />
         </section>
       )}
+
+      <section className="mb-5">
+        <DigestSettings to={env.ownerEmail ?? null} blocker={emailBlocker()} />
+      </section>
 
       <div className="mb-5 grid gap-3 md:grid-cols-2">
         <Card tone={problems.some((c) => c.state === "error") ? "urgent" : undefined}>

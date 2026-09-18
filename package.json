@@ -15,7 +15,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
     "test:counts": "tsx scripts/test-counts.mts",
-    "test": "npm run test:import && npm run test:counts && npm run test:logic && npm run test:migrations && npm run test:prompts && npm run test:model && npm run test:assignments && npm run test:threads && npm run test:plan && npm run test:brain-tools && npm run test:chat && npm run test:spend && npm run test:links",
+    "test": "npm run test:import && npm run test:counts && npm run test:logic && npm run test:migrations && npm run test:prompts && npm run test:model && npm run test:assignments && npm run test:threads && npm run test:plan && npm run test:brain-tools && npm run test:chat && npm run test:spend && npm run test:links && npm run test:digest",
     "test:logic": "tsx scripts/test-logic.mts",
     "test:migrations": "tsx scripts/test-migrations.mts",
     "test:prompts": "tsx scripts/test-prompts.mts",
@@ -26,7 +26,8 @@
     "test:brain-tools": "tsx scripts/test-brain-tools.mts",
     "test:chat": "tsx scripts/test-chat.mts",
     "test:spend": "tsx scripts/test-spend.mts",
-    "test:links": "tsx scripts/test-links.mts"
+    "test:links": "tsx scripts/test-links.mts",
+    "test:digest": "tsx scripts/test-digest.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

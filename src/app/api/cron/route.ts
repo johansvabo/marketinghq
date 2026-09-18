@@ -6,6 +6,8 @@ import { materializeReportRuns } from "@/lib/reporting/schedule";
 import { runProactiveEngine } from "@/lib/proactive/engine";
 import { getOrCreateBrief } from "@/lib/brief";
 import { planCycle, processPending } from "@/lib/ai/briefings";
+import { processAssignments } from "@/lib/ai/assignments";
+import { sendWeeklyDigest } from "@/lib/ai/digest";
 
 export const runtime = "nodejs";
 export const maxDuration = 250;
@@ -57,6 +59,22 @@ export async function GET(request: Request) {
     steps.brief = { error: error instanceof Error ? error.message : String(error) };
   }
 
+  /*
+   * Work you asked for, before work nobody asked for.
+   *
+   * Assignments used to be driven only by a component on their own page,
+   * which meant they advanced solely while that page was open in a browser.
+   * Anything handed over and then closed sat half-finished for as long as it
+   * took someone to reopen it. They now get first call on the budget, ahead
+   * of the scheduled briefings.
+   */
+  try {
+    const assignmentBudget = Math.max(20_000, 140_000 - (Date.now() - startedAt));
+    steps.assignments = await processAssignments(assignmentBudget);
+  } catch (error) {
+    steps.assignments = { error: error instanceof Error ? error.message : String(error) };
+  }
+
   // The team's scheduled work: plan whatever has come round, then produce as
   // much as fits in what is left of this invocation. Anything remaining is
   // picked up by the next one, so a big cycle never has to fit in a single run.
@@ -71,6 +89,17 @@ export async function GET(request: Request) {
     steps.briefings = await processPending(remainingBudget);
   } catch (error) {
     steps.briefings = { error: error instanceof Error ? error.message : String(error) };
+  }
+
+  /*
+   * Last, so the digest describes a cycle that has finished rather than one
+   * still half-produced. It keeps its own last-sent stamp, so running the
+   * cron three times a day still only mails once a week.
+   */
+  try {
+    steps.digest = await sendWeeklyDigest();
+  } catch (error) {
+    steps.digest = { error: error instanceof Error ? error.message : String(error) };
   }
 
   const durationMs = Date.now() - startedAt;

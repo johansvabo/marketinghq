@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 /**
  * A team assignment is only useful if the running order holds: the strategist
  * frames the brief before the others build on it, and the reviewer cannot
@@ -7,7 +8,16 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/lib/db";
 import { assignments, clients, contributions } from "../src/lib/db/schema";
-import { createAssignment, nextPending, processAssignment, ASSIGNABLE, REVIEWER } from "../src/lib/ai/assignments";
+import {
+  createAssignment,
+  nextPending,
+  processAssignment,
+  processAssignments,
+  retryAssignment,
+  reviseAssignment,
+  ASSIGNABLE,
+  REVIEWER,
+} from "../src/lib/ai/assignments";
 import { AGENTS, ORDERED_AGENTS, agentRank } from "../src/lib/ai/agents";
 
 let pass = 0;
@@ -156,6 +166,106 @@ check("...and says why, in terms that suggest a fix", /too big|narrowing/i.test(
 
 // The stale window must outlast the route limit, or live work gets double-run.
 check("the reclaim window is longer than the route's 300s limit", STALE_MS_FOR_TEST > 300_000, `${STALE_MS_FOR_TEST}ms`);
+
+/* ------------------------------------------------ getting out of a stuck one */
+
+// Everything below is about the failure the user actually hit: a specialist
+// errors, and there is no way back. nextPending only ever looks at "pending",
+// so an errored contribution is terminal unless something requeues it.
+
+const rescue = await createAssignment({
+  title: "Rescue",
+  brief: "Something that failed the first time round.",
+  clientId: client.id,
+  agentKeys: ["strategy", "linkedin"],
+});
+if (!rescue.ok) throw new Error(rescue.error);
+
+const setStatus = (agentKey: string, patch: Record<string, unknown>) =>
+  db
+    .update(contributions)
+    .set(patch)
+    .where(and(eq(contributions.assignmentId, rescue.id), eq(contributions.agentKey, agentKey)));
+
+const rowOf = async (agentKey: string) => {
+  const [row] = await db
+    .select()
+    .from(contributions)
+    .where(and(eq(contributions.assignmentId, rescue.id), eq(contributions.agentKey, agentKey)));
+  return row;
+};
+
+await setStatus("strategy", { status: "error", error: "Your credit balance is too low", attempts: 3, completedAt: new Date() });
+await setStatus("linkedin", { status: "ready", body: "x".repeat(80), completedAt: new Date() });
+
+const beforeRetry = await nextPending(rescue.id);
+check(
+  "a failed specialist is never picked up again on its own",
+  !beforeRetry.rows.some((r) => r.agentKey === "strategy" && r.status === "pending"),
+);
+
+const retried = await retryAssignment(rescue.id);
+check("retrying requeues the failed one", retried.ok && retried.requeued >= 1, JSON.stringify(retried));
+const afterRetry = await rowOf("strategy");
+check("...as pending", afterRetry.status === "pending", afterRetry.status);
+check("...with its attempts cleared", afterRetry.attempts === 0, String(afterRetry.attempts));
+check("...and its old error wiped", afterRetry.error === null, String(afterRetry.error));
+
+const keptWork = await rowOf("linkedin");
+check("work that succeeded is left alone", keptWork.status === "ready" && Boolean(keptWork.body), keptWork.status);
+
+const [reopened] = await db.select().from(assignments).where(eq(assignments.id, rescue.id));
+check("the assignment goes back to running", reopened.status === "running", reopened.status);
+
+// Nothing to retry is a refusal, not a silent no-op that looks like success.
+await setStatus("strategy", { status: "ready", body: "y".repeat(80) });
+const nothing = await retryAssignment(rescue.id);
+check("retrying with nothing failed says so", !nothing.ok);
+
+// Starting over throws away every answer, including ones that worked.
+// The count is only what had to be reset — a contribution already waiting its
+// turn is left alone. What matters is the state afterwards: nobody still
+// holding an old answer, and everybody queued.
+const startOver = await retryAssignment(rescue.id, { all: true });
+check("running it all again is accepted", startOver.ok, JSON.stringify(startOver));
+const allRows = await db.select().from(contributions).where(eq(contributions.assignmentId, rescue.id));
+check("...and leaves every specialist pending", allRows.every((r) => r.status === "pending"), allRows.map((r) => r.status).join(","));
+check("...with no answers left over", allRows.every((r) => r.body === null));
+check("...and the reviewer included", allRows.some((r) => r.agentKey === "editor"), String(allRows.length));
+
+/* ------------------------------------------------------- editing the brief */
+
+const revised = await reviseAssignment(rescue.id, "A completely different question.");
+check("the brief can be rewritten", revised.ok, JSON.stringify(revised));
+const [afterRevise] = await db.select().from(assignments).where(eq(assignments.id, rescue.id));
+check("...and the new text is stored", afterRevise.brief === "A completely different question.");
+check("...the gathered answer is dropped with it", afterRevise.synthesis === null);
+check("...and everyone is sent back out", (await rowOf("strategy")).status === "pending");
+
+check("an empty brief is refused", !(await reviseAssignment(rescue.id, "   ")).ok);
+check("an unchanged brief is refused", !(await reviseAssignment(rescue.id, "A completely different question.")).ok);
+check("a brief for a missing assignment is refused", !(await reviseAssignment("nope", "text")).ok);
+
+/* ------------------------------------------- work continues without a tab */
+
+// The bug behind "0 of 3 reported, four days ago": processAssignment was
+// only ever called by a component on the assignment's own page, so closing
+// the browser stopped the work. Nothing else drove it.
+const cronRoute = readFileSync("src/app/api/cron/route.ts", "utf8");
+check("the nightly pass drives assignments", cronRoute.includes("processAssignments("));
+check("...before the scheduled briefings", cronRoute.indexOf("processAssignments(") < cronRoute.indexOf("processPending("));
+
+// With no API key configured it must still be safe to call, and honest.
+const swept = await processAssignments(5_000);
+check("sweeping reports what is still outstanding", typeof swept.stillOutstanding === "number", JSON.stringify(swept));
+
+/* ------------------------------------ specialists overlap instead of queue */
+
+const src = readFileSync("src/lib/ai/assignments.ts", "utf8");
+check("specialists run together", src.includes("await Promise.all(") && src.includes("const batch = available.filter"));
+check("the reviewer still runs alone, after them", src.includes("agentRank(r.agentKey) < 2"));
+check("a specialist runs at lower effort than the reviewer", src.includes('effort: agent.runsLast ? "high" : "medium"'));
+check("and for fewer turns", src.includes("maxTurns: agent.runsLast ? 10 : 6"));
 
 await db.delete(assignments);
 await db.delete(clients).where(eq(clients.id, client.id));
