@@ -618,6 +618,8 @@ export const assignments = sqliteTable(
     synthesis: text("synthesis"),
     error: text("error"),
     completedAt: integer("completed_at", { mode: "timestamp" }),
+    /** When we told them it was finished. Null means we still owe them a nudge. */
+    notifiedAt: integer("notified_at", { mode: "timestamp" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

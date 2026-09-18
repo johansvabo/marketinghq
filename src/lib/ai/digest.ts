@@ -1,6 +1,6 @@
-import { and, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { briefings, clients, settings } from "@/lib/db/schema";
+import { assignments, briefings, clients, contributions, settings } from "@/lib/db/schema";
 import { env, isConfigured } from "@/lib/env";
 import { canSendEmail, sendEmail, type MailResult } from "@/lib/email";
 import { AGENTS, type AgentKey } from "./agents";
@@ -214,4 +214,86 @@ export async function unreadBriefingCount(): Promise<number> {
     .from(briefings)
     .where(and(eq(briefings.status, "ready"), isNull(briefings.readAt)));
   return rows.length;
+}
+
+
+/* ------------------------------------------------- "your brief is finished" */
+
+/**
+ * Tells them the team is done with something they handed over.
+ *
+ * Work you asked for, unlike the weekly digest, is worth interrupting for —
+ * you are waiting on it. Sent once per assignment; the stamp is what stops a
+ * finished brief being announced again on every pass.
+ */
+export async function notifyFinishedAssignments(
+  now = new Date(),
+): Promise<{ notified: number; skipped: string | null }> {
+  if (!canSendEmail()) return { notified: 0, skipped: "Email is not configured." };
+
+  const finished = await db
+    .select({ assignment: assignments, clientName: clients.name })
+    .from(assignments)
+    .leftJoin(clients, eq(assignments.clientId, clients.id))
+    .where(and(inArray(assignments.status, ["ready", "error"]), isNull(assignments.notifiedAt)))
+    .orderBy(desc(assignments.completedAt))
+    .limit(10);
+
+  let notified = 0;
+
+  for (const { assignment, clientName } of finished) {
+    const parts = await db
+      .select()
+      .from(contributions)
+      .where(eq(contributions.assignmentId, assignment.id));
+
+    const failed = parts.filter((p) => p.status === "error");
+    const answered = parts.filter((p) => p.status === "ready");
+
+    const body = assignment.synthesis ?? answered[0]?.body ?? null;
+    const lead = body
+      ? excerpt(body, 400)
+      : `Ingen av spesialistene fikk levert noe. ${failed[0]?.error ?? ""}`.trim();
+
+    const subject = assignment.synthesis
+      ? `Teamet er ferdig: ${assignment.title}`
+      : `Teamet stoppet opp: ${assignment.title}`;
+
+    const meta = [clientName, `${answered.length} av ${parts.length} leverte`].filter(Boolean).join(" · ");
+
+    const html = `<!doctype html>
+<html lang="no"><body style="margin:0;padding:24px 12px;background:#f4f4f7;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:14px;padding:26px 24px;">
+    <tr><td>
+      <div style="font:700 19px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#17171a;">${escape(assignment.title)}</div>
+      <div style="font:400 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#77777f;margin-top:4px;">${escape(meta)}</div>
+      <div style="font:400 14px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#44444c;margin-top:14px;white-space:pre-wrap;">${escape(lead)}</div>
+      ${
+        failed.length > 0
+          ? `<div style="font:400 12.5px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#b4462f;margin-top:14px;">${failed.length} spesialist${failed.length === 1 ? "" : "er"} feilet. Du kan kjøre dem på nytt fra oppdragssiden.</div>`
+          : ""
+      }
+      <div style="margin-top:22px;">
+        <a href="${escape(env.appUrl)}/team/assignments/${escape(assignment.id)}" style="display:inline-block;background:#17171a;color:#ffffff;text-decoration:none;font:600 13.5px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:10px 16px;border-radius:9px;">Les hele svaret</a>
+      </div>
+    </td></tr>
+  </table>
+</body></html>`;
+
+    const text = [subject, meta, "", lead, "", `${env.appUrl}/team/assignments/${assignment.id}`].join("\n");
+
+    const result = await sendEmail({ subject, html, text });
+
+    /*
+     * Stamped only on a successful send. A transient failure at the mail
+     * provider should mean "try again next pass", not "he never hears about
+     * this one" — which is the failure mode that would be invisible.
+     */
+    if (result.ok) {
+      await db.update(assignments).set({ notifiedAt: now }).where(eq(assignments.id, assignment.id));
+      notified++;
+    }
+  }
+
+  return { notified, skipped: null };
 }

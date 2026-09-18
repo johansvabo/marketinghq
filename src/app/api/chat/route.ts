@@ -100,8 +100,25 @@ export async function POST(request: Request) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      /*
+       * Nobody may be listening any more, and that must not stop the work.
+       *
+       * Closing the tab cancels this stream, and the very next enqueue throws
+       * "Invalid state: Controller is already closed". That throw used to
+       * happen inside the callback Claude streams text through, killing the
+       * run partway — so an answer you walked away from was never finished
+       * and never saved. Writing to a gone reader is now a no-op: the run
+       * carries on to the end and the finished answer lands in the thread,
+       * waiting for you when you come back.
+       */
+      let listening = true;
       const send = (event: string, data: unknown) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        if (!listening) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          listening = false;
+        }
       };
 
       send("thread", { threadId: threadIdForClient });
@@ -160,7 +177,11 @@ export async function POST(request: Request) {
 
         send("error", { message });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          /* Already closed by the reader walking away. */
+        }
       }
     },
   });

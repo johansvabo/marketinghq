@@ -7,7 +7,7 @@ import { runProactiveEngine } from "@/lib/proactive/engine";
 import { getOrCreateBrief } from "@/lib/brief";
 import { planCycle, processPending } from "@/lib/ai/briefings";
 import { processAssignments } from "@/lib/ai/assignments";
-import { sendWeeklyDigest } from "@/lib/ai/digest";
+import { notifyFinishedAssignments, sendWeeklyDigest } from "@/lib/ai/digest";
 
 export const runtime = "nodejs";
 export const maxDuration = 250;
@@ -89,6 +89,14 @@ export async function GET(request: Request) {
     steps.briefings = await processPending(remainingBudget);
   } catch (error) {
     steps.briefings = { error: error instanceof Error ? error.message : String(error) };
+  }
+
+  // Anything the team finished while nobody was watching. Work you asked for
+  // is worth interrupting for, so this does not wait for the weekly digest.
+  try {
+    steps.notified = await notifyFinishedAssignments();
+  } catch (error) {
+    steps.notified = { error: error instanceof Error ? error.message : String(error) };
   }
 
   /*
