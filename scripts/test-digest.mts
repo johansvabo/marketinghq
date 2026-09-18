@@ -51,6 +51,15 @@ check("each piece names who wrote it", html.includes("Odin") && html.includes("A
 check("the client is shown when there is one", html.includes("Nattugla"));
 check("there is a way back into the app", html.includes("https://example.test/team"));
 
+// APP_URL defaults to localhost. A button pointing at the reader's own
+// machine reads as a broken product, so it must not be rendered at all.
+const local = renderDigest(pieces, null, "http://localhost:3000");
+check("a localhost link is never put in an email", !local.html.includes("localhost"), "dead link shipped");
+check("...and the text version leaves it out too", !local.text.includes("localhost"));
+check("...but the email still says where to look", local.html.includes("Åpne Marketing HQ"));
+check("...and names the variable to fix it", local.html.includes("APP_URL"));
+check("the pieces are all still there without the link", pieces.every((p) => local.html.includes(p.title)));
+
 // The excerpt must be prose, not the markdown heading above it.
 check("the excerpt skips the heading", html.includes("Kommunene kjøper ikke teknologi"), "heading leaked in");
 check("...and strips markdown from it", !html.includes("# Overskrift"));

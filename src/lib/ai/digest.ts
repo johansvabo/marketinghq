@@ -105,6 +105,18 @@ function escape(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * Whether links in an email can be trusted to go anywhere.
+ *
+ * APP_URL defaults to localhost, which is right for a laptop and useless in
+ * an inbox — every button would point at the reader's own machine. When it
+ * has not been set for the deployment, the email carries the words and says
+ * where to look instead of offering a dead link.
+ */
+function linkable(appUrl: string): boolean {
+  return appUrl.startsWith("https://");
+}
+
 export function renderDigest(pieces: DigestPiece[], summary: string | null, appUrl: string) {
   const subject =
     pieces.length === 1
@@ -146,9 +158,11 @@ export function renderDigest(pieces: DigestPiece[], summary: string | null, appU
         ${items}
       </table>
       <div style="margin-top:22px;">
-        <a href="${escape(appUrl)}/team" style="display:inline-block;background:#17171a;color:#ffffff;text-decoration:none;font:600 13.5px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:10px 16px;border-radius:9px;">
-          Les alt i Marketing HQ
-        </a>
+        ${
+          linkable(appUrl)
+            ? `<a href="${escape(appUrl)}/team" style="display:inline-block;background:#17171a;color:#ffffff;text-decoration:none;font:600 13.5px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:10px 16px;border-radius:9px;">Les alt i Marketing HQ</a>`
+            : `<div style="font:400 12.5px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#b4462f;">Åpne Marketing HQ for å lese alt. (Sett APP_URL i Vercel, så blir dette en lenke.)</div>`
+        }
       </div>
       <div style="font:400 11.5px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#9a9aa2;margin-top:18px;">
         Dette er teamets planlagte arbeid. Slå det av eller ned under Innstillinger.
@@ -164,7 +178,7 @@ export function renderDigest(pieces: DigestPiece[], summary: string | null, appU
     "",
     ...pieces.map((p) => `— ${p.title} (${p.agentName}${p.clientName ? `, ${p.clientName}` : ""})\n  ${excerpt(p.body)}`),
     "",
-    `${appUrl}/team`,
+    linkable(appUrl) ? `${appUrl}/team` : "Åpne Marketing HQ for å lese alt.",
   ].join("\n");
 
   return { subject, html, text };
@@ -274,13 +288,24 @@ export async function notifyFinishedAssignments(
           : ""
       }
       <div style="margin-top:22px;">
-        <a href="${escape(env.appUrl)}/team/assignments/${escape(assignment.id)}" style="display:inline-block;background:#17171a;color:#ffffff;text-decoration:none;font:600 13.5px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:10px 16px;border-radius:9px;">Les hele svaret</a>
+        ${
+          linkable(env.appUrl)
+            ? `<a href="${escape(env.appUrl)}/team/assignments/${escape(assignment.id)}" style="display:inline-block;background:#17171a;color:#ffffff;text-decoration:none;font:600 13.5px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:10px 16px;border-radius:9px;">Les hele svaret</a>`
+            : `<div style="font:400 12.5px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#b4462f;">Åpne oppdraget i Marketing HQ. (Sett APP_URL i Vercel, så blir dette en lenke.)</div>`
+        }
       </div>
     </td></tr>
   </table>
 </body></html>`;
 
-    const text = [subject, meta, "", lead, "", `${env.appUrl}/team/assignments/${assignment.id}`].join("\n");
+    const text = [
+      subject,
+      meta,
+      "",
+      lead,
+      "",
+      linkable(env.appUrl) ? `${env.appUrl}/team/assignments/${assignment.id}` : "Åpne oppdraget i Marketing HQ.",
+    ].join("\n");
 
     const result = await sendEmail({ subject, html, text });
 
