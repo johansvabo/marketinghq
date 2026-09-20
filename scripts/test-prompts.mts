@@ -20,6 +20,37 @@ check("it offers instead of saving", /offering it/.test(brain));
 check("filing raw notes is still exempt", /Filing raw notes .*is itself the request to structure/.test(brain));
 check("the roster placeholder is replaced", !brain.includes("TEAM_ROSTER"));
 
+/* -------------------------------------------- the roster covers the disciplines */
+
+// A writing job went to the media buyer because nobody on the team wrote for
+// a living, and his answer was fluent, well-argued and flat. A missing
+// discipline does not announce itself: the nearest specialist takes the work
+// and does it at the level a non-specialist would.
+const roles = Object.values(AGENTS).map((a) => `${a.role} ${a.blurb} ${a.handoff}`.toLowerCase());
+const covers = (term: string) => roles.some((r) => r.includes(term));
+check("somebody's craft is the words themselves", covers("copywriting") || covers("copy"));
+check("somebody owns strategy", covers("strategy"));
+check("somebody owns the numbers", covers("performance"));
+check("somebody owns how it looks", covers("art direction"));
+check("somebody reviews the rest", Object.values(AGENTS).some((a) => a.runsLast));
+
+// Two people who both write need a boundary, or the brain picks arbitrarily.
+check("the writer is distinguished from the LinkedIn specialist", /Iver writes for LinkedIn/.test(AGENTS.copy.handoff));
+check("...and from the art director", !AGENTS.design.handoff.includes("ad copy"));
+
+// The failure that caused the hire, encoded as a rule she is held to.
+const nora = AGENTS.copy.persona;
+check("she refuses variants that are synonyms", /different arguments, not different wordings/i.test(nora));
+check("she will not let a headline repeat the body", /headline does a different job/i.test(nora));
+check("she keeps spec language out of copy", /vocabulary is not copy/i.test(nora));
+check("she insists on something concrete", /Something has to be seen/i.test(nora));
+check("she says what each variant tests", /say what each one tests/i.test(nora));
+check("she can say the problem is not the copy", /the problem is not the copy/i.test(nora));
+check("she knows B2B buyers carry personal risk", /fired for doing nothing/i.test(nora));
+check("she knows Norwegian public procurement", /framework agreement|procurement is a process/i.test(nora));
+check("she reads the named source in full, not the excerpt", /read that document in full, not the excerpt/i.test(nora));
+check("she writes Norwegian from the idea, not from English", /not translated English/i.test(nora));
+
 for (const agent of Object.values(AGENTS)) {
   check(`the brain knows to hand off to ${agent.name}`, brain.includes(agent.name) && brain.includes(`/team/${agent.key}`));
   check(`${agent.name} has a handoff line`, agent.handoff.trim().length > 20);
