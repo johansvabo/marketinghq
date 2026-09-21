@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { assignments, chatMessages, chatThreads, clients, contributions, projects, type Assignment } from "@/lib/db/schema";
 import { isConfigured } from "@/lib/env";
-import { AGENTS, ORDERED_AGENTS, agentRank, getAgent, type AgentKey } from "./agents";
+import { AGENTS, BRIEFABLE_AGENTS, ORDERED_AGENTS, agentRank, getAgent, type AgentKey } from "./agents";
 import { runBrain } from "./brain";
 import { describeAiError } from "./client";
 
@@ -22,7 +22,8 @@ const MAX_ATTEMPTS = 3;
 export const STALE_MS_FOR_TEST = STALE_RUNNING_MS;
 export const MAX_ATTEMPTS_FOR_TEST = MAX_ATTEMPTS;
 
-export const ASSIGNABLE = ORDERED_AGENTS.filter((a) => !a.runsLast);
+/** Re-exported so there is exactly one answer to "who can be briefed". */
+export const ASSIGNABLE = BRIEFABLE_AGENTS;
 export const REVIEWER = ORDERED_AGENTS.find((a) => a.runsLast) ?? null;
 
 export async function createAssignment(input: {

@@ -3,7 +3,8 @@
  * changes how the brain behaves with no compile error and no failing page.
  * These check the text the model actually receives, not the source that builds it.
  */
-import { AGENTS, agentSystemPrompt } from "../src/lib/ai/agents";
+import { AGENTS, AGENT_LIST, BRIEFABLE_KEYS, agentSystemPrompt } from "../src/lib/ai/agents";
+import { BRAIN_TOOLS } from "../src/lib/ai/tools";
 import { brainSystemPrompt, wantsWeb } from "../src/lib/ai/brain";
 
 let pass = 0;
@@ -19,6 +20,33 @@ check("the brain is told not to save unless asked", /Never call save_draft unles
 check("it offers instead of saving", /offering it/.test(brain));
 check("filing raw notes is still exempt", /Filing raw notes .*is itself the request to structure/.test(brain));
 check("the roster placeholder is replaced", !brain.includes("TEAM_ROSTER"));
+
+/* ------------------------------------------- the brain can reach everyone it sees */
+
+/*
+ * A newly hired specialist was on the roster, on her own page and named in
+ * the brain's prompt — but the team-brief tool's schema listed the agent keys
+ * by hand, so the model could see her and had no legal value to name her
+ * with. It reported the gap rather than picking someone else, which is the
+ * only reason this was ever noticed.
+ */
+const proposeTool = BRAIN_TOOLS.find((t) => t.name === "propose_team_brief")!;
+const schema = proposeTool.input_schema as {
+  properties: { agents: { items: { enum: string[] } }; };
+};
+const briefable = schema.properties.agents.items.enum;
+
+check("the team-brief tool offers every briefable specialist", BRIEFABLE_KEYS.every((k) => briefable.includes(k)));
+check("...and offers nothing that is not on the roster", briefable.every((k) => AGENT_LIST.some((a) => a.key === k)));
+check("the reviewer is not offered — she is added automatically", !briefable.includes("editor"));
+check("the writer can be briefed through the brain", briefable.includes("copy"));
+check("the enum is generated rather than typed out", briefable.length === BRIEFABLE_KEYS.length);
+
+// Naming a key is not enough: the model has to know what the key means.
+const description = schema.properties.agents.description as unknown as string;
+for (const key of BRIEFABLE_KEYS) {
+  check(`the tool says what "${key}" is for`, description.includes(key) && description.includes(AGENTS[key].name));
+}
 
 /* -------------------------------------------- the roster covers the disciplines */
 

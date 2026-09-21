@@ -16,7 +16,7 @@ import {
 import { addDays, iso, relativeDay, subDays } from "@/lib/dates";
 import { compare, formatMetric, metricLabel, totalsFor } from "@/lib/metrics";
 import { createAssignment } from "./assignments";
-import type { AgentKey } from "./agents";
+import { BRIEFABLE_KEYS, briefableRoster, type AgentKey } from "./agents";
 
 /*
  * Cache invalidation is a nicety; the write already happened. Outside a request
@@ -241,8 +241,11 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
         project: { type: "string" },
         agents: {
           type: "array",
-          items: { type: "string", enum: ["strategy", "performance", "linkedin", "seo", "market", "pipeline", "design"] },
-          description: "Which specialists should work it. Pick the ones whose discipline the brief actually needs; the reviewer is always added.",
+          // Generated, not listed: a hand-kept copy of this went stale the
+          // moment a specialist was hired, and the model could see her on the
+          // roster while the schema refused to let it name her.
+          items: { type: "string", enum: [...BRIEFABLE_KEYS] },
+          description: `Which specialists should work it. Pick the ones whose discipline the brief actually needs; the reviewer is always added.\n\n${briefableRoster()}`,
         },
       },
       required: ["title", "brief"],

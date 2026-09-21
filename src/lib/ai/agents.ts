@@ -523,6 +523,25 @@ export function agentRank(key: string | undefined | null): number {
 /** Specialists in the order they should work a shared brief. */
 export const ORDERED_AGENTS = [...AGENT_LIST].sort((a, b) => agentRank(a.key) - agentRank(b.key));
 
+/**
+ * Who can be put on a brief: everyone except the reviewer, who is added to
+ * every assignment automatically and has nothing to gather until the rest
+ * have reported.
+ *
+ * Derived, never written out. A hand-kept copy of this list in the team-brief
+ * tool's schema was how a newly hired specialist became unreachable: she was
+ * on the roster, on her own page, and named in the brain's prompt, but the
+ * enum the model had to choose from did not include her — so it could see her
+ * and could not send her anything, and said so.
+ */
+export const BRIEFABLE_AGENTS = ORDERED_AGENTS.filter((a) => !a.runsLast);
+export const BRIEFABLE_KEYS = BRIEFABLE_AGENTS.map((a) => a.key);
+
+/** One line per specialist, so the model picks on discipline rather than on a key. */
+export function briefableRoster(): string {
+  return BRIEFABLE_AGENTS.map((a) => `${a.key} — ${a.name}, ${a.role}: ${a.handoff}`).join("\n");
+}
+
 export function getAgent(key: string | undefined | null): Agent | null {
   if (!key) return null;
   return AGENTS[key as AgentKey] ?? null;
