@@ -55,6 +55,11 @@ export function SpendPanel({ summary }: { summary: SpendSummary }) {
         <CardTitle action={biggest ? <span className="text-[11.5px] text-muted">largest first</span> : undefined}>
           Where it went
         </CardTitle>
+        <p className="mb-2 text-[11.5px] leading-relaxed text-muted">
+          Scheduled work — briefings, the daily headline, document extraction — runs on the cheaper model at lower
+          depth, because nobody is waiting on it. The chat and briefs you hand over use whichever model is chosen
+          above.
+        </p>
         {bySurface.length === 0 ? (
           <p className="text-[12.5px] text-muted">
             Nothing recorded yet. Every model call from here on is logged with what it cost, so this fills in as you work.

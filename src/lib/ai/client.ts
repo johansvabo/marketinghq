@@ -40,6 +40,55 @@ export async function currentModel(): Promise<string> {
   return override && AVAILABLE_MODELS.some((m) => m.id === override) ? override : DEFAULT_MODEL;
 }
 
+/**
+ * Work that runs while nobody is waiting: scheduled briefings, the daily
+ * headline, the weekly digest, document extraction.
+ *
+ * None of it is being read as it arrives, and none of it is a judgement call
+ * you are sitting there weighing. Running it on the flagship at full depth
+ * was a default nobody chose — it just inherited what the chat uses — and it
+ * is most of the bill.
+ */
+const BACKGROUND_SURFACES = new Set(["briefing", "brief", "import"]);
+
+const BACKGROUND_MODEL_KEY = "model:background";
+
+/** Sonnet 5: $2/$10 against Opus 5's $5/$25, and strong at reading and writing. */
+export const DEFAULT_BACKGROUND_MODEL = "claude-sonnet-5";
+
+/**
+ * The model for a given kind of work.
+ *
+ * Interactive work — the chat, a brief you handed over and are waiting on —
+ * uses whatever is chosen in Settings. Background work uses the cheaper model
+ * unless that is explicitly overridden too, because paying the flagship rate
+ * for something produced overnight and read later, if at all, is spending
+ * without deciding to.
+ */
+export async function modelFor(surface?: string): Promise<string> {
+  if (!surface || !BACKGROUND_SURFACES.has(surface)) return currentModel();
+
+  const [row] = await db.select().from(settings).where(eq(settings.key, BACKGROUND_MODEL_KEY)).limit(1);
+  const override = (row?.value as { model?: string } | null)?.model;
+  if (override && AVAILABLE_MODELS.some((m) => m.id === override)) return override;
+
+  // A background model that no longer exists must not silently fall back to
+  // the expensive one — fall back to what is configured overall instead.
+  return AVAILABLE_MODELS.some((m) => m.id === DEFAULT_BACKGROUND_MODEL) ? DEFAULT_BACKGROUND_MODEL : currentModel();
+}
+
+export async function setBackgroundModel(modelId: string | null): Promise<void> {
+  if (modelId === null) {
+    await db.delete(settings).where(eq(settings.key, BACKGROUND_MODEL_KEY));
+    return;
+  }
+  if (!AVAILABLE_MODELS.some((m) => m.id === modelId)) throw new Error("Unknown model.");
+  await db
+    .insert(settings)
+    .values({ key: BACKGROUND_MODEL_KEY, value: { model: modelId } })
+    .onConflictDoUpdate({ target: settings.key, set: { value: { model: modelId } } });
+}
+
 /** What is actually in effect right now, and whether that is a manual override. */
 export async function modelStatus(): Promise<{ id: string; label: string; isOverride: boolean }> {
   const [row] = await db.select().from(settings).where(eq(settings.key, MODEL_SETTINGS_KEY)).limit(1);

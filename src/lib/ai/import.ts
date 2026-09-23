@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { clients } from "@/lib/db/schema";
 import type { SourceDocument } from "@/lib/import/files";
 import { chunkText } from "@/lib/import/files";
-import { anthropic, currentModel, isTransient } from "./client";
+import { anthropic, modelFor, isTransient } from "./client";
 import { recordUsage, usageFrom } from "./spend";
 
 export const INSIGHT_KINDS = [
@@ -89,7 +89,7 @@ function contextBlock(names: string[], hint?: string): string {
 
 async function extractOne(content: Anthropic.ContentBlockParam[], names: string[], hint?: string): Promise<Candidate[]> {
   const client = anthropic();
-  const model = await currentModel();
+  const model = await modelFor("import");
 
   let response;
   for (let attempt = 0; ; attempt++) {

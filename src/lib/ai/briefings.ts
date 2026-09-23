@@ -165,7 +165,15 @@ export async function processPending(
       const result = await runBrain({
         agent,
         messages: [{ role: "user", content: prompt }],
-        maxTurns: 10,
+        /*
+         * Six turns at medium effort, like the specialists on an assignment.
+         * Ten turns at full depth was left here when the assignments were
+         * brought down, and it is the more expensive of the two paths: this
+         * one runs on a schedule, for every agent, for every client, whether
+         * or not the last cycle was read.
+         */
+        maxTurns: 6,
+        effort: "medium",
         surface: "briefing",
       });
 

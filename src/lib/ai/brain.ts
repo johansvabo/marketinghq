@@ -3,7 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, projects } from "@/lib/db/schema";
 import { format } from "@/lib/dates";
-import { anthropic, currentModel, isTransient } from "./client";
+import { anthropic, modelFor, isTransient } from "./client";
 import { recordUsage, usageFrom, type Surface } from "./spend";
 import { BRAIN_TOOLS, runBrainTool } from "./tools";
 import { AGENTS, agentSystemPrompt, type Agent } from "./agents";
@@ -196,7 +196,7 @@ export async function runBrain(opts: {
   effort?: "low" | "medium" | "high";
 }): Promise<BrainResult> {
   const client = anthropic();
-  const model = await currentModel();
+  const model = await modelFor(opts.surface);
   const messages = [...opts.messages];
   const toolCalls: BrainResult["toolCalls"] = [];
   const maxTurns = opts.maxTurns ?? 8;
@@ -385,7 +385,7 @@ export async function generate(opts: {
   surface?: Surface;
 }): Promise<string> {
   const client = anthropic();
-  const model = await currentModel();
+  const model = await modelFor(opts.surface);
 
   let response: Anthropic.Message | undefined;
   for (let attempt = 0; ; attempt++) {
