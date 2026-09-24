@@ -18,6 +18,16 @@ const STALE_RUNNING_MS = 7 * 60 * 1000;
 /** Given up on after this many starts that never reached a result. */
 const MAX_ATTEMPTS = 3;
 
+/**
+ * How long an untouched assignment keeps being driven automatically.
+ *
+ * Long enough that something handed over on Friday still finishes over the
+ * weekend, short enough that work you walked away from stays walked away
+ * from rather than quietly resuming and charging for it.
+ */
+const ABANDONED_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+export const ABANDONED_AFTER_MS_FOR_TEST = ABANDONED_AFTER_MS;
+
 /** Exposed so the recovery tests assert against the real values. */
 export const STALE_MS_FOR_TEST = STALE_RUNNING_MS;
 export const MAX_ATTEMPTS_FOR_TEST = MAX_ATTEMPTS;
@@ -379,10 +389,19 @@ export async function processAssignments(
   let produced = 0;
   let failed = 0;
 
+  /*
+   * Only work that is actually live.
+   *
+   * This used to take every assignment sitting at "running", with no regard
+   * for age — and the day the nightly pass started driving them, it woke up
+   * months of abandoned briefs at once and billed for all of them. An
+   * assignment nobody has touched in days is not in progress, it was left;
+   * resuming it is a decision, and there is a button for it on its own page.
+   */
   const active = await db
     .select({ id: assignments.id })
     .from(assignments)
-    .where(eq(assignments.status, "running"))
+    .where(and(eq(assignments.status, "running"), gte(assignments.updatedAt, new Date(now.getTime() - ABANDONED_AFTER_MS))))
     .orderBy(desc(assignments.createdAt))
     .limit(20);
 
@@ -397,7 +416,7 @@ export async function processAssignments(
   const [{ n }] = await db
     .select({ n: sql<number>`count(*)` })
     .from(assignments)
-    .where(eq(assignments.status, "running"));
+    .where(and(eq(assignments.status, "running"), gte(assignments.updatedAt, new Date(now.getTime() - ABANDONED_AFTER_MS))));
 
   return { advanced, produced, failed, stillOutstanding: Number(n) };
 }

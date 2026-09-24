@@ -17,6 +17,16 @@ import { generate } from "./brain";
 
 const SENT_KEY = "digest:last-sent";
 
+/**
+ * How recently an assignment must have finished to be worth an email.
+ *
+ * A brief that landed two days ago is news. One that landed in August is a
+ * notification about something you have already read, forgotten, or given up
+ * on — and it makes every future one easier to ignore.
+ */
+const NOTIFY_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
+export const NOTIFY_WINDOW_MS_FOR_TEST = NOTIFY_WINDOW_MS;
+
 const SUMMARY_SYSTEM = `You write the opening paragraph of a weekly digest for an independent marketing consultant.
 
 You are given what his team of specialists produced this week. Write three to five sentences telling him what is worth his attention, in his own working language (Norwegian).
@@ -245,11 +255,28 @@ export async function notifyFinishedAssignments(
 ): Promise<{ notified: number; skipped: string | null }> {
   if (!canSendEmail()) return { notified: 0, skipped: "Email is not configured." };
 
+  /*
+   * Recently finished, not everything that was ever finished.
+   *
+   * notified_at arrived as a new column, so every assignment in the history
+   * defaulted to "not told about" — and the first nightly pass after it
+   * shipped mailed out weeks-old briefs, ten at a time. A migration stamped
+   * the back catalogue; this window is what stops the same shape of mistake
+   * reaching an inbox again, whatever else goes wrong.
+   */
+  const since = new Date(now.getTime() - NOTIFY_WINDOW_MS);
+
   const finished = await db
     .select({ assignment: assignments, clientName: clients.name })
     .from(assignments)
     .leftJoin(clients, eq(assignments.clientId, clients.id))
-    .where(and(inArray(assignments.status, ["ready", "error"]), isNull(assignments.notifiedAt)))
+    .where(
+      and(
+        inArray(assignments.status, ["ready", "error"]),
+        isNull(assignments.notifiedAt),
+        gte(assignments.completedAt, since),
+      ),
+    )
     .orderBy(desc(assignments.completedAt))
     .limit(10);
 
