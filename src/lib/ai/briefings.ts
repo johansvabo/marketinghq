@@ -55,6 +55,18 @@ export async function saveBriefingConfig(config: BriefingConfig): Promise<void> 
     .insert(settings)
     .values({ key: SETTINGS_KEY, value: { ...config, enabledAt } })
     .onConflictDoUpdate({ target: settings.key, set: { value: { ...config, enabledAt } } });
+
+  /*
+   * Switching off clears what was queued and never produced.
+   *
+   * Leaving it would mean the work reappears whenever the schedule is turned
+   * back on — a cycle from weeks ago, for a client brief that has moved on,
+   * arriving as though it were this week's. Queued rows hold no content, only
+   * the intention to do work that is no longer wanted.
+   */
+  if (previous.enabled && !config.enabled) {
+    await db.delete(briefings).where(eq(briefings.status, "pending"));
+  }
 }
 
 /**
@@ -140,6 +152,18 @@ export async function processPending(
   now = new Date(),
 ): Promise<{ produced: number; failed: number; remaining: number; reclaimed: number }> {
   if (!isConfigured.anthropic()) return { produced: 0, failed: 0, remaining: 0, reclaimed: 0 };
+
+  /*
+   * Off has to mean off.
+   *
+   * Switching the schedule off stopped new cycles being planned and nothing
+   * else — anything already queued kept being produced every night until the
+   * queue drained on its own. So the setting read as "stop", the bill said
+   * otherwise, and there was no way to tell from the outside which it was
+   * doing.
+   */
+  const config = await getBriefingConfig();
+  if (!config.enabled) return { produced: 0, failed: 0, remaining: 0, reclaimed: 0 };
 
   const reclaimed = await reclaimAbandoned(now);
   const deadline = Date.now() + budgetMs;
