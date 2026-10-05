@@ -267,8 +267,8 @@ export function BrainChat({
               </p>
               {!emptyHint && (
                 <p className="max-w-[46ch] text-[12px] leading-relaxed text-muted">
-                  For work inside one discipline — a post, a search plan, a competitor read, a tender window —{" "}
-                  <Link href="/team" className="underline">the team</Link> goes deeper on that one thing.
+                  It carries nine disciplines — paid media, copy, strategy, search, art direction and the rest — and
+                  pulls in whichever the work needs. Ask for one by name if you want it read a particular way.
                 </p>
               )}
             </div>

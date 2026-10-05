@@ -56,26 +56,23 @@ check("drop_tasks marks it dropped, not deleted", after3b.status === "dropped");
 check("...and keeps the reason", after3b.notes === "overtaken");
 
 // Proposing team work
-const proposal = await runBrainTool("propose_team_brief", {
-  title: "Lanseringsstrategi", brief: "Hvor skal vi lansere først?", client: "Nattugla", agents: ["strategy", "performance"],
-});
-const [asg] = await db.select().from(assignments);
-check("a proposal is created", asg !== undefined);
-check("...but is not running", asg?.status === "proposed", asg?.status);
-check("...and says so rather than implying work started", /Nothing has started/i.test(proposal.text), proposal.text);
+/*
+ * The brain used to draft a brief and hand it to a team. There is no team:
+ * the disciplines are lenses it loads and answers with itself, which is what
+ * removed the two steps between asking and having an answer.
+ */
+const lens = await runBrainTool("consult_specialist", { discipline: "performance", about: "reading the numbers" });
+check("a discipline can be loaded mid-conversation", lens.text.includes("Paid media & performance"));
+check("...and brings its actual craft, not a summary", /double-counts/i.test(lens.text));
+check("...while staying one mind", /still yourself/i.test(lens.text));
 
-const work = await db.select().from(contributions).where(eq(contributions.assignmentId, asg.id));
-check("the chosen specialists are lined up", work.some((w) => w.agentKey === "performance"));
-check("...with the reviewer added", work.some((w) => w.agentKey === "editor"));
+const unknownLens = await runBrainTool("consult_specialist", { discipline: "astrology" });
+check("an invented discipline is refused", /No such discipline/i.test(unknownLens.text));
+check("...and the real ones are named", unknownLens.text.includes("copy"));
 
-// The worker must not touch a proposal before it is approved.
-const ran = await processAssignment(asg.id);
-check("the team does not start on an unapproved proposal", ran.produced === 0 && ran.done === false);
-const stillPending = await db.select().from(contributions).where(inArray(contributions.status, ["running", "ready"]));
-check("...and nothing was marked as started", stillPending.length === 0, `${stillPending.length} started`);
-
-const shown = await pendingProposals();
-check("it is offered for approval", shown.length === 1 && shown[0].title === "Lanseringsstrategi");
+// Nothing may quietly pass as reviewed when the review did not run.
+const thin = await runBrainTool("critique_work", { work: "Ser bra ut." });
+check("a fragment is not accepted as finished work", /nothing here to judge/i.test(thin.text));
 
 // Filing a dropped file
 const [unfiled] = await db.insert(documents).values({

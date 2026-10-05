@@ -3,7 +3,7 @@
  * changes how the brain behaves with no compile error and no failing page.
  * These check the text the model actually receives, not the source that builds it.
  */
-import { AGENTS, AGENT_LIST, BRIEFABLE_KEYS, agentSystemPrompt } from "../src/lib/ai/agents";
+import { AGENTS, AGENT_LIST, LENS_KEYS, agentSystemPrompt } from "../src/lib/ai/agents";
 import { BRAIN_TOOLS } from "../src/lib/ai/tools";
 import { brainSystemPrompt, wantsWeb } from "../src/lib/ai/brain";
 
@@ -21,32 +21,31 @@ check("it offers instead of saving", /offering it/.test(brain));
 check("filing raw notes is still exempt", /Filing raw notes .*is itself the request to structure/.test(brain));
 check("the roster placeholder is replaced", !brain.includes("TEAM_ROSTER"));
 
-/* ------------------------------------------- the brain can reach everyone it sees */
+/* --------------------------------------- the brain can reach every discipline */
 
 /*
  * A newly hired specialist was on the roster, on her own page and named in
- * the brain's prompt — but the team-brief tool's schema listed the agent keys
- * by hand, so the model could see her and had no legal value to name her
- * with. It reported the gap rather than picking someone else, which is the
- * only reason this was ever noticed.
+ * the brain's prompt — but the tool's schema listed the keys by hand, so the
+ * model could see her and had no legal value to name her with. The team is
+ * gone and the disciplines are lenses now; the same hazard applies to the
+ * tool that loads them.
  */
-const proposeTool = BRAIN_TOOLS.find((t) => t.name === "propose_team_brief")!;
-const schema = proposeTool.input_schema as {
-  properties: { agents: { items: { enum: string[] } }; };
-};
-const briefable = schema.properties.agents.items.enum;
+const consultTool = BRAIN_TOOLS.find((t) => t.name === "consult_specialist")!;
+const lensSchema = consultTool.input_schema as { properties: { discipline: { enum: string[] } } };
+const offered = lensSchema.properties.discipline.enum;
 
-check("the team-brief tool offers every briefable specialist", BRIEFABLE_KEYS.every((k) => briefable.includes(k)));
-check("...and offers nothing that is not on the roster", briefable.every((k) => AGENT_LIST.some((a) => a.key === k)));
-check("the reviewer is not offered — she is added automatically", !briefable.includes("editor"));
-check("the writer can be briefed through the brain", briefable.includes("copy"));
-check("the enum is generated rather than typed out", briefable.length === BRIEFABLE_KEYS.length);
+check("every discipline can be loaded", LENS_KEYS.every((k) => offered.includes(k)));
+check("...and nothing is offered that has no lens", offered.every((k) => AGENT_LIST.some((a) => a.key === k)));
+check("the enum is generated rather than typed out", offered.length === LENS_KEYS.length);
+check("the editor is a lens too, not a separate step", offered.includes("editor"));
 
-// Naming a key is not enough: the model has to know what the key means.
-const description = schema.properties.agents.description as unknown as string;
-for (const key of BRIEFABLE_KEYS) {
-  check(`the tool says what "${key}" is for`, description.includes(key) && description.includes(AGENTS[key].name));
+for (const key of LENS_KEYS) {
+  check(`the tool says what "${key}" is for`, consultTool.description!.includes(key));
 }
+
+// Nothing may still route work away — there is nowhere for it to go.
+check("the brain no longer proposes team briefs", !BRAIN_TOOLS.some((t) => t.name === "propose_team_brief"));
+check("...and its prompt does not send anyone anywhere", !brain.includes("/team/"));
 
 /* -------------------------------------------- the roster covers the disciplines */
 
@@ -80,11 +79,14 @@ check("she reads the named source in full, not the excerpt", /read that document
 check("she writes Norwegian from the idea, not from English", /not translated English/i.test(nora));
 
 for (const agent of Object.values(AGENTS)) {
-  check(`the brain knows to hand off to ${agent.name}`, brain.includes(agent.name) && brain.includes(`/team/${agent.key}`));
+  check(`the brain can reach ${agent.name}'s discipline`, brain.includes(agent.key));
   check(`${agent.name} has a handoff line`, agent.handoff.trim().length > 20);
 }
 
-check("the brain is honest about decks", /Nobody here builds a finished PowerPoint/.test(brain));
+// Phrasing changed when the team collapsed into one mind ("nobody here"
+// needs more than one person to be true). The rule is what matters.
+check("the brain is honest about decks", /cannot build a finished PowerPoint/i.test(brain));
+check("...and says what it can do instead", /slide by slide/i.test(brain));
 
 // The brain used to tell itself it had no web access while agents did —
 // wrong once web search was turned on for it too. Both the capability and

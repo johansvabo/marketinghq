@@ -16,7 +16,7 @@ import {
 import { addDays, iso, relativeDay, subDays } from "@/lib/dates";
 import { compare, formatMetric, metricLabel, totalsFor } from "@/lib/metrics";
 import { createAssignment } from "./assignments";
-import { BRIEFABLE_KEYS, briefableRoster, type AgentKey } from "./agents";
+import { LENS_KEYS, lensMenu, lensOf, type AgentKey } from "./agents";
 
 /*
  * Cache invalidation is a nicety; the write already happened. Outside a request
@@ -225,30 +225,48 @@ export const BRAIN_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
-    name: "propose_team_brief",
-    description:
-      "Draft a brief for the specialist team and put it in front of them for approval. It does NOT start the work — they see the brief, who would work it, and an approve button. Use this whenever the answer is really a piece of work for the team rather than something you should do in the chat. Say in your reply what you have proposed and that it is waiting for their go-ahead.",
+    name: "consult_specialist",
+    description: `Pull a discipline's expertise into this conversation before answering.
+
+You are one mind with a deep bench, not a router. Nobody else is going to answer this — load what you need and answer it yourself.
+
+Use it when the work turns on craft you should not improvise: what a number actually means, why a set of ad variants is the same claim four times, how a layout should be judged, whether a market is worth entering. Also use it the moment they ask for a particular point of view ("se på dette som performance-folk").
+
+You may load more than one. Load it before you start, not after you have written something and want to check it — that is what critique_work is for.
+
+Disciplines:
+${lensMenu()}`,
     input_schema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Short name for the assignment." },
-        brief: {
+        discipline: { type: "string", enum: [...LENS_KEYS] },
+        about: { type: "string", description: "One line on what you are about to use it for." },
+      },
+      required: ["discipline"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "critique_work",
+    description: `Have finished work torn down by someone who did not write it.
+
+This runs a separate pass that sees only the text and the brief — not your reasoning, not the conversation. That is the whole point: you cannot give your own draft fresh eyes, and a self-review in the same breath mostly finds what you already meant to say.
+
+Use it before handing anything over that matters — copy, a plan, a recommendation, a document for a client — and when they ask you to be hard on something. It costs a separate model call, so use it on finished work rather than on every paragraph.
+
+Give it the full text. Fix what it finds, or say why you disagree; do not pass the critique on as though it were the deliverable.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        work: { type: "string", description: "The finished text, in full." },
+        brief: { type: "string", description: "What it was meant to do, and any hard constraints it had to meet." },
+        lens: {
           type: "string",
-          description:
-            "The full instruction the team will work from. Write it as you would for a colleague: what to produce, for whom, the constraints, and what would make it good. Include what you already know from their records so nobody starts from scratch.",
-        },
-        client: { type: "string", description: "Client name or id, when it is for one." },
-        project: { type: "string" },
-        agents: {
-          type: "array",
-          // Generated, not listed: a hand-kept copy of this went stale the
-          // moment a specialist was hired, and the model could see her on the
-          // roster while the schema refused to let it name her.
-          items: { type: "string", enum: [...BRIEFABLE_KEYS] },
-          description: `Which specialists should work it. Pick the ones whose discipline the brief actually needs; the reviewer is always added.\n\n${briefableRoster()}`,
+          enum: [...LENS_KEYS],
+          description: "Which discipline should judge it. Defaults to the editor, who judges whether it is fit to send.",
         },
       },
-      required: ["title", "brief"],
+      required: ["work"],
       additionalProperties: false,
     },
   },
@@ -436,8 +454,10 @@ export async function runBrainTool(
       return rescheduleTasks(input);
     case "drop_tasks":
       return dropTasks(input);
-    case "propose_team_brief":
-      return proposeTeamBrief(input);
+    case "consult_specialist":
+      return consultSpecialist(input);
+    case "critique_work":
+      return critiqueWork(input);
     default:
       return { text: `Unknown tool: ${name}` };
   }
@@ -922,35 +942,6 @@ async function dropTasks(input: any): Promise<ToolResult> {
   return { text: report(found, input.ids, "Dropped") };
 }
 
-/**
- * Drafts an assignment and leaves it waiting. Nothing runs until they approve
- * it — briefing the team costs real money and speaks for them, so it is not
- * something the brain should set going on its own.
- */
-async function proposeTeamBrief(input: any): Promise<ToolResult> {
-  const client = await resolveClient(input.client);
-  let projectId: string | null = null;
-  if (input.project) projectId = (await resolveProject(input.project))?.id ?? null;
-
-  const chosen: string[] = Array.isArray(input.agents) && input.agents.length ? input.agents : ["strategy"];
-
-  const result = await createAssignment({
-    title: input.title,
-    brief: input.brief,
-    clientId: client?.id ?? null,
-    projectId,
-    agentKeys: chosen as AgentKey[],
-    status: "proposed",
-  });
-
-  if (!result.ok) return { text: `Could not draft that: ${result.error}` };
-
-  refresh("/team");
-  return {
-    text: `Drafted "${input.title}" for ${chosen.join(", ")} and put it in front of them to approve. Nothing has started yet. Tell them what you proposed and that it is waiting on their go-ahead.`,
-    data: { assignmentId: result.id, kind: "proposal" },
-  };
-}
 
 /**
  * An excerpt that can be turned back into the whole thing.
@@ -1039,4 +1030,70 @@ async function createTaskTool(input: any): Promise<ToolResult> {
     .returning();
 
   return { text: `Task created: "${row.title}"${dueDate ? `, due ${relativeDay(dueDate)}` : ""}.`, data: row.id };
+}
+
+/** A discipline's expertise, loaded into the conversation on demand. */
+async function consultSpecialist(input: any): Promise<ToolResult> {
+  const lens = lensOf(String(input.discipline ?? ""));
+  if (!lens) return { text: `No such discipline. Available: ${LENS_KEYS.join(", ")}.` };
+
+  return {
+    text: [
+      `# ${lens.role}`,
+      ``,
+      `You are still yourself — this is knowledge, not a second person. Do not sign it, do not announce that you consulted anyone, and do not hedge behind it. Use it and answer.`,
+      ``,
+      `---`,
+      ``,
+      lens.text,
+    ].join("\n"),
+  };
+}
+
+/**
+ * A critical pass over finished work, by something that did not write it.
+ *
+ * Deliberately a separate call with none of this conversation in it. A model
+ * reviewing its own draft in the same breath mostly rediscovers what it meant
+ * to say; the value of the reviewer was always that she had not been in the
+ * room while it was written.
+ */
+async function critiqueWork(input: any): Promise<ToolResult> {
+  const work = String(input.work ?? "").trim();
+  if (work.length < 40) return { text: "Give me the finished work in full — there is nothing here to judge." };
+
+  const lens = lensOf(String(input.lens ?? "editor")) ?? lensOf("editor");
+  if (!lens) return { text: "No reviewer is configured." };
+
+  const system = [
+    `You are reviewing work you did not write, for an independent marketing consultant, before it reaches a client.`,
+    ``,
+    `You cannot see how it was made or what was discussed — only what is below. Judge what is there.`,
+    ``,
+    `Lead with the single thing most likely to embarrass him, and say plainly whether this is fit to send. Be specific: quote the line, say what is wrong with it, say what would fix it. Three real problems beat ten observations. If it is good, say so in one line and stop — manufacturing criticism to look useful wastes his time and teaches him to ignore you.`,
+    ``,
+    `Check it against the brief where there is one: a deliverable that is well written and answers a different question is the expensive failure.`,
+    ``,
+    `---`,
+    ``,
+    lens.text,
+  ].join("\n");
+
+  const prompt = [
+    input.brief ? `## What it was meant to do\n\n${String(input.brief).trim()}` : `## No brief was given\n\nJudge it on its own terms, and say if the intent is unclear from the work itself.`,
+    ``,
+    `## The work`,
+    ``,
+    work,
+  ].join("\n");
+
+  try {
+    // Imported here rather than at the top: brain.ts imports this module, and
+    // taking the dependency at module level would close the cycle.
+    const { generate } = await import("./brain");
+    const verdict = await generate({ system, prompt, effort: "medium", maxTokens: 4_000, surface: "chat" });
+    return { text: `A separate reviewer read this cold:\n\n${verdict}` };
+  } catch (error) {
+    return { text: `The review could not be run: ${error instanceof Error ? error.message : String(error)}. Say so rather than presenting the work as reviewed.` };
+  }
 }

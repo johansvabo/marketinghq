@@ -551,3 +551,38 @@ export function getAgent(key: string | undefined | null): Agent | null {
 export function agentSystemPrompt(agent: Agent): string {
   return `${agent.persona}\n\n---\n\n${SHARED}`;
 }
+
+
+/* ------------------------------------------------------------------ lenses */
+
+/**
+ * A specialist's knowledge, without the specialist.
+ *
+ * Nine separate colleagues turned out to be the wrong unit. What made them
+ * good was what they knew and what they refused to accept — not that each one
+ * was a person you had to remember to brief, wait for, and collect from. The
+ * knowledge was worth keeping; the handoffs were two extra steps and most of
+ * the failure surface.
+ *
+ * So the personas stay exactly as written and become reference material the
+ * brain pulls in when the work calls for it. Nothing is rewritten for the
+ * move: the strictness is the value, and softening it into a summary would
+ * leave a lens that agrees with everything.
+ */
+export function lensOf(key: string): { role: string; name: string; text: string } | null {
+  const agent = getAgent(key);
+  if (!agent) return null;
+
+  // Drop only the opening "You are X, ..." sentence. Everything after it is
+  // craft, and some personas put real content on that same first line.
+  const text = agent.persona.replace(/^You are [^.]*\.\s*/, "").trim();
+
+  return { role: agent.role, name: agent.name, text };
+}
+
+/** The disciplines available as a lens, for the tool schema and its description. */
+export const LENS_KEYS = AGENT_LIST.map((a) => a.key);
+
+export function lensMenu(): string {
+  return AGENT_LIST.map((a) => `${a.key} — ${a.role}: ${a.handoff}`).join("\n");
+}

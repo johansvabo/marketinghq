@@ -15,7 +15,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
     "test:counts": "tsx scripts/test-counts.mts",
-    "test": "npm run test:import && npm run test:counts && npm run test:logic && npm run test:migrations && npm run test:prompts && npm run test:model && npm run test:assignments && npm run test:threads && npm run test:plan && npm run test:brain-tools && npm run test:chat && npm run test:spend && npm run test:links && npm run test:digest && npm run test:background && npm run test:excerpts && npm run test:routing && npm run test:nightly && npm run test:briefing-off",
+    "test": "npm run test:import && npm run test:counts && npm run test:logic && npm run test:migrations && npm run test:prompts && npm run test:model && npm run test:assignments && npm run test:threads && npm run test:plan && npm run test:brain-tools && npm run test:chat && npm run test:spend && npm run test:links && npm run test:digest && npm run test:background && npm run test:excerpts && npm run test:routing && npm run test:nightly && npm run test:briefing-off && npm run test:superbrain",
     "test:logic": "tsx scripts/test-logic.mts",
     "test:migrations": "tsx scripts/test-migrations.mts",
     "test:prompts": "tsx scripts/test-prompts.mts",
@@ -32,7 +32,8 @@
     "test:excerpts": "tsx scripts/test-excerpts.mts",
     "test:routing": "tsx scripts/test-model-routing.mts",
     "test:nightly": "tsx scripts/test-nightly.mts",
-    "test:briefing-off": "tsx scripts/test-briefing-off.mts"
+    "test:briefing-off": "tsx scripts/test-briefing-off.mts",
+    "test:superbrain": "tsx scripts/test-superbrain.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
